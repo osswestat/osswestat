@@ -1,0 +1,179 @@
+---
+title: "Sectoring CRAN"
+author: "Rahul Shrivastava"
+date: "2023-07-04"
+output: html_document
+---
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(RMySQL)
+library(tidyorgs)
+```
+
+
+### Loading in Data from RDS Database
+
+```{r}
+
+# Set up the database connection parameters
+db_host <- "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com"
+db_port <- 3306
+db_name <- "cran"
+db_user <- 
+db_password <- 
+
+# Establish the database connection
+db <- dbConnect(MySQL(), host = db_host, port = db_port, dbname = db_name, user = db_user, password = db_password)
+
+# Specify the table name you want to pull in
+table_name <- "cran_users"
+
+# Fetch the entire table into a data frame
+query <- paste0("SELECT * FROM ", table_name)
+data <- dbGetQuery(db, query)
+
+# Close the database connection
+dbDisconnect(db)
+
+
+```
+
+### Cleaning cran_users Data
+
+```{r}
+
+data[data == ""] <- NA
+
+data <- data |>
+  drop_na(author_user_login) |>
+  distinct()
+
+```
+
+
+### Categorizing for Non-profit
+
+```{r}
+
+df_nonprofits <- data |>
+  email_to_orgs(author_user_login, author_email, author_user_location, "nonprofit") 
+
+
+df_nonprofits <- df_nonprofits |>
+  drop_na(author_user_login) |>
+  distinct() |>
+  mutate(nonprofit = 1) |>
+  rename(organization = author_user_location)
+
+```
+
+### Categorizing for Academic
+
+```{r}
+
+df_academic <- data |>
+  email_to_orgs(author_user_login, author_email, author_user_location, "academic") 
+
+
+df_academic <- df_academic |>
+  drop_na(author_user_login) |>
+  distinct() |>
+  mutate(academic = 1) |>
+  rename(organization = author_user_location)
+
+
+```
+
+### Categorizing for Business
+
+```{r}
+
+df_business <- data |>
+  email_to_orgs(author_user_login, author_email, author_user_location, "business") 
+
+
+df_business <- df_business |>
+  drop_na(author_user_login) |>
+  distinct() |>
+  mutate(business = 1) |>
+  rename(organization = author_user_location)
+
+```
+
+### Categorizing for Government
+
+```{r}
+
+df_government <- data |>
+  email_to_orgs(author_user_login, author_email, author_user_location, "government") 
+
+
+df_government <- df_government |>
+  drop_na(author_user_login) |>
+  distinct() |>
+  mutate(government = 1) |>
+  rename(organization = author_user_location)
+
+```
+
+
+### Concatenating Categorized Dataframes
+
+```{r}
+
+categorized_users <- bind_rows(df_academic, df_business, df_government, df_nonprofits)
+
+```
+
+
+
+```{r}
+
+data <- data |>
+  left_join(categorized_users, by = "author_user_login")
+
+```
+
+### Finalizing Output Dataframe and Pushing to Databse
+
+```{r}
+
+data <- data |>
+  rename(login = author_user_login,
+         name = author_name,
+         email = author_email,
+         location = author_user_location,
+         company = author_user_company,
+         pronouns = author_user_pronouns,
+         bio = author_user_bio,
+         website = author_user_website,
+         twitter = author_user_twitter
+         )
+
+```
+
+### Pushing to the DBS
+
+```{r}
+# Set up the database connection parameters
+db_host <- "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com"
+db_port <- 3306
+db_name <- "cran"
+db_user <- 
+db_password <- 
+
+# Establish the database connection
+db <- dbConnect(MySQL(), host = db_host, port = db_port, dbname = db_name, user = db_user, password = db_password)
+
+# Push dataframe to database
+dbWriteTable(db, name = "cran_users_sectored", value = data, overwrite = TRUE)
+
+# Close the database connection
+dbDisconnect(db)
+
+```
+
+

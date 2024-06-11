@@ -1,0 +1,1293 @@
+---
+title: "Code.gov"
+editor: 
+  markdown: 
+    wrap: 72
+format: 
+   html:
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    fig-width: 8
+    fig-height: 6
+---
+
+Code.gov is the Federal Government's platform for sharing and open
+sourcing software from Government Agencies. Recent policies of the U.S.
+Federal Government such as the Federal Source Code Policy (FSCP) promote
+the sharing of software source code developed by or for the Federal
+Government. Public funding for creation of software by or for the
+Federal Government and for research through universities plays an
+important role but it is not fully accounted. Our aim is to measure how
+much of OSS is developed in the U.S. Federal Government and estimate its
+value. As OSS is disseminated online, a wealth of information is
+available in the code and source code repositories of the software
+programs themselves. Examples include: contributors, their
+organizations, lines of code contributed, etc. We use non-survey data
+from Code.gov which is the Federal Government's platform for sharing and
+open sourcing software from Government Agencies.
+
+## Objectives
+
+Our aim is to measure how much of OSS is developed in the U.S. Federal
+Government and estimate its value. This page below provides insights
+from Exploratory Data Analysis
+
+## Data and Methods
+
+The data acquired from Code.gov is in JSON format covering over 17,000
+software projects, across 21 different Federal Agencies and includes
+information on each project, agency name, host links, descriptions and
+other information. Most of these are developed and hosted on GitHub. We
+also use GitHub to obtain related information.
+
+Our second source of data is GitHub -- a popular version control and
+hosting service which is the largest platform in the world with over 108
+million users and 100 million public repositories. From GitHub we have
+collected data on over 7.8 million repositories, 2.1 million users and
+778 million commits. The information gathered from GitHub includes
+commits, lines of code added and deleted, OSI licenses, users' login
+information, organization, locations, emails, etc.
+
+## Exploratory Data Analysis
+
+Add text here
+
+```{r, include=FALSE}
+library(tidyverse)
+library(ggthemes)
+library(SnowballC)
+library(tidytext)
+library(igraph)
+library(ggraph)
+library(widyr)
+library(tidyorgs)
+library(treemap)
+library(treemapify)
+library(cranlogs)
+library(reticulate)
+library(RMySQL)
+library(DBI)
+library(RColorBrewer)
+library(kableExtra)
+library(knitr)
+library(corrplot)
+library(plotly)
+library(classInt)
+library(diverstidy)
+library(gridExtra) 
+library(pander)
+library(dplyr)
+library(ggplot2)
+library(forcats)
+library(tidyr)
+library(treemap)
+library(treemapify)
+library(scales)
+
+Sys.setenv(DB_USERNAME = , DB_PASSWORD = )
+setwd("C://Users//rahul//Desktop//CodeGov")
+
+```
+
+### Hosting Platforms
+
+```{r, message=FALSE}
+
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+hosting <- dbReadTable(con, "codegov_agency_hosting")
+
+dbDisconnect(con)
+
+hosting <- hosting |>
+  mutate(total_hosting = rowSums(across(where(is.numeric)))) |>
+  select(domain, total_hosting) |>
+  mutate(
+    domain = ifelse(domain == "Github", "GitHub", domain),
+    domain = ifelse(domain =="Gitlab", "GitLab", domain)
+  ) |>
+  filter(!row_number() %in% c(10))
+
+
+
+#theme_set(theme_wes())
+  
+
+hosting |>
+  mutate(domain = fct_reorder(domain, total_hosting)) |>
+  ggplot(aes(x = domain, y = total_hosting)) + 
+    geom_bar(stat = "identity", fill = '#014d64', width=.6) +
+    coord_flip() +
+    labs(title = "Hosting Repositories of OSS Projects on Code.gov (as of June 2022)",
+        x = element_blank(),
+        y = "Number of Projects") +
+  theme(legend.title=element_blank(),
+        plot.title = element_text(hjust = 0,
+                                    face = "bold",
+                                    size = 12),
+        plot.margin = margin(.2, .2, .2, .2, "cm"))
+
+ggsave("Plots/01_hosting_platforms.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/01_hosting_platforms.pdf", width = 7, height = 4, units = "in")
+
+write_csv(agency_proj, "C:/Users/rahul/Desktop/CodeGov/Output/agency_proj.csv")
+```
+
+The most popular hosting platform for Code.gov projects is GitHub
+followed by the Code.gov platform itself.
+
+```{r}
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+hosting <- dbReadTable(con, "codegov_agency_hosting")
+
+dbDisconnect(con)
+
+hosting <- hosting |>
+  gather(key = "Variable", value = "Value", -domain) |>
+  spread(key = domain, value = Value) |>
+  arrange(desc(Total)) |>
+  rename(Agency = Variable,
+         Code.gov = Total) |>
+  mutate(Agency = str_replace_all(Agency, "\\.", " "))
+```
+
+```{r}
+hosting <- transform(hosting, GitHub_Percent = Github / Code.gov * 100)
+
+hosting |>
+  select(Agency, Code.gov, Github, GitHub_Percent) |>
+  rename(GitHub = Github) |>
+  mutate(Agency = fct_reorder(Agency, Code.gov)) |>
+  ggplot(aes(x = Agency, y = Code.gov, fill = "Code.gov")) +
+  geom_bar(stat = "identity") +
+  geom_bar(aes(y = GitHub, fill = "GitHub"), stat = "identity") +
+  scale_fill_economist() +
+  coord_flip() +
+      labs(title = "Repositories Hosted on GitHub (as of June 2022)",
+           color = NULL,
+           x = element_blank(),
+           y = "Number of Projects",
+           fill = "Legend") +
+  theme(legend.title=element_blank(),
+        plot.title = element_text(hjust = 0, 
+                                  face = "bold", 
+                                  size = 12),
+        legend.position="bottom",
+        plot.margin = margin(.2, .2, .2, .2, "cm"))
+  
+
+ggsave("Plots/02_projects_on_github.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/02_projects_on_github.pdf", width = 7, height = 4, units = "in")
+```
+
+### Government Agencies
+
+```{r}
+
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+agency_proj <- dbReadTable(con, "codegov_gh_agency_count")
+
+dbDisconnect(con)
+
+agency_proj <- agency_proj |>
+  mutate(
+    agency = ifelse(agency == "NASA", "National Aeronautics and Space Administration", agency),
+    agency = ifelse(agency == "Veteran Affairs", "Department of Veterans Affairs", agency),
+    agency = ifelse(agency == "Department of Defence", "Department of Defense", agency)
+  )
+  
+  
+
+agency_proj |>
+  select(agency, projects) |>
+  mutate(agency = fct_reorder(agency, projects)) |>
+  ggplot(aes(x = agency, y = projects)) +
+    geom_bar(stat = "identity", fill = '#014d64', width=.6) +
+    coord_flip() +
+  labs(title = "OSS Projects Hosted on GitHub (2009-2021)") +
+    labs(x = element_blank(),
+      y = "Number of Projects") +
+  theme(plot.title = element_text(hjust = 0, 
+                                  face = "bold", 
+                                  size = 12),
+        plot.margin = margin(.2, .5, .2, .2, "cm"))
+
+ggsave("Plots/03_projects_by_agency.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/03_projects_by_agency.pdf", width = 7, height = 4, units = "in")
+```
+
+The Department of Energy, the General Services Administration and the
+Department of Health & Human Services are the top 3 agencies by number
+of projects showcased on the Code.gov platform.
+
+### Contributing Sectors
+
+```{r, message=FALSE}
+
+
+
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+sectors <- dbReadTable(con, "codegov_users_sectored")
+
+dbDisconnect(con)
+
+sectors_count <- sectors |>
+  summarise(Academic = sum(academic, na.rm = T),
+            Business = sum(business, na.rm = T),
+            Government = sum(government,  na.rm = T),
+            `Non-Profit` = sum(nonprofit, na.rm = T))
+
+sectors_count <- sectors_count |>
+  gather(key = "Sectors", value = "Contributors")
+  
+ggplot(sectors_count, aes(area = Contributors, fill = Sectors, label = Contributors)) +
+  geom_treemap() +
+  geom_treemap_text(aes(label = scales::comma(Contributors)),
+                    colour = "black",
+                    place = "centre",
+                    size = 15)+
+  ggtitle(element_blank())+
+  labs(title = "Contributors by Sectors (2009-2021)") +
+  scale_fill_economist() +
+    theme(plot.title = element_text(hjust = 0, 
+                                  face = "bold", 
+                                  size = 12),
+          plot.margin = margin(.2, .5, .2, .2, "cm"))
+
+ggsave("Plots/04_contributing_sectors.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/04_contributing_sectors.pdf", width = 7, height = 4, units = "in")
+
+```
+
+Contributors belonging to the Government sector were the highest with
+6,324 contributors followed by the Academic sector with 2,635
+contributors, Business sector with 1,615 contributors and the Non-Profit
+sector with 232 contributors.
+
+### Top 20 Organizations By Number of Contributors
+
+```{r}
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+users <- dbReadTable(con, "codegov_users_sectors")
+
+dbDisconnect(con)
+
+orgs_count <- users |>
+  count(organization, name = 'Contributors', sort = T) |>
+  rename(Organization = organization) |>
+  arrange(desc(Contributors)) |>
+  top_n(21, Contributors) |>
+  slice(2:21)
+
+Sector = c("Academic", "Academic", "Government", "Academic", "Academic", "Government", "Academic", "Academic", "Academic", "Academic", "Private", "Private", "Academic", "Academic", "Academic", "Academic", "Academic", "Private", "Academic", "Academic")
+
+orgs_count$Sector <- Sector
+
+
+orgs_count |>
+  select(Organization, Contributors, Sector) |>
+  mutate(Organization = fct_reorder(Organization, Contributors)) |>
+  ggplot(aes(x = Organization, y = Contributors, fill = Sector)) +
+    geom_bar(stat = "identity", width = 0.6) +
+    coord_flip() +
+    #geom_text(aes(label = Contributors), color = 'white', position = position_dodge(width = 0.5), hjust = 1.2, size = 7/.pt) +
+   scale_fill_economist() +
+    labs(title = "Contributors by Organization/Agency (2009-2021)",
+         x = element_blank(),
+         y = "Number of Contributors") +
+    theme(plot.title = element_text(hjust = 0, 
+                                  face = "bold", 
+                                  size = 12),
+          plot.margin = margin(.2, .5, .2, .2, "cm"),
+          legend.title = element_blank(),
+          legend.position = "bottom")
+
+
+# orgs_count |>
+#   select(Organization, Contributors, Sector) |>
+#   mutate(Organization = fct_reorder(Organization, Contributors)) |>
+#   ggplot(aes(x = Organization, y = Contributors)) +
+#     geom_bar(stat = "identity", fill="Sector", width=.6) +
+#     #geom_bar(aes(y = Sector, fill = "Sector"), stat = "identity") +
+#     coord_flip() +
+#    geom_text(aes(label=Contributors), color='white', position=position_dodge(width = 0.05), hjust=1.2, size = 7/.pt) +
+#     theme(legend.title=element_blank()) +
+#     labs(title = element_blank(),
+#         x = element_blank(),
+#         y = "Number of Contributors")+
+#   theme(plot.margin = margin(.5, .5, .5, .5, "cm"))
+
+ggsave("Plots/05_top_20_orgs.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/05_top_20_orgs.pdf", width = 7, height = 4, units = "in")
+
+
+```
+
+The highest number of contributors by organizations were the Lawrence
+Livermore National Laboratory and Sandia National Laboratory. Private
+sector organizations with the highest number of contributors were Intel
+Corporation and Google.
+
+### Top 20 Contributors by Lines of Code Added
+
+```{r, warning=FALSE}
+
+#establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+contri <- dbReadTable(con, "codegov_gh_commits_by_login")
+
+dbDisconnect(con)
+
+cont_count <- contri |>
+  select(login, additions) |>
+  group_by(login) |>
+  summarise(Contribution = sum(additions)) |>
+  rename(Contributor = login) |>
+  arrange(desc(Contribution)) |>
+  top_n(20, Contribution)
+
+cont_count |>
+  select(Contributor, Contribution) |>
+  mutate(Contributor = fct_reorder(Contributor, Contribution)) |>
+  ggplot(aes(x = Contributor, y = Contribution)) +
+    geom_bar(stat = "identity", fill = '#014d64', width=.6) +
+    scale_y_continuous(labels = label_number(suffix = "M", scale = 1e-6, big.mark = ",")) +
+    coord_flip() +
+    theme(legend.title=element_blank()) +
+    labs(title = element_blank(),
+        x = element_blank(),
+        y = "Lines of Code") +
+  theme(plot.margin = margin(.5, .5, .5, .5, "cm"))
+
+ggsave("Plots/06_top_20_contributors.emf", width = 6, height = 4, units = "in")
+ggsave("Plots/06_top_20_contributors.pdf", width = 6, height = 4, units = "in")
+
+
+```
+
+### Detailed Info of Top 20 Contributors (Table)
+
+```{r}
+
+top_20_users <- cont_count %>%
+  left_join(users, by = join_by(Contributor == login)) |>
+  group_by(Contributor) |>
+  filter(row_number()==1)
+
+
+top_20_users
+
+```
+
+### Top 20 Academic Institutions By Number of Contributors
+
+```{r}
+
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+users <- dbReadTable(con, "codegov_users_sectors")
+
+dbDisconnect(con)
+
+orgs_count <- users |>
+  filter(sector == 'Academic') |>
+  count(organization, name = 'Contributors', sort = T) |>
+  rename(Organization = organization) |>
+  arrange(desc(Contributors)) |>
+  top_n(20, Contributors)
+
+orgs_count |>
+  select(Organization, Contributors) |>
+  mutate(Organization = fct_reorder(Organization, Contributors)) |>
+  ggplot(aes(x = Organization, y = Contributors)) +
+    geom_bar(stat = "identity", fill = '#014d64', width=.6) +
+    coord_flip() +
+    #geom_text(aes(label=Contributors), color='white', position=position_dodge(width = 0.05), hjust=1.2, size = 7/.pt) +
+    theme(legend.title=element_blank()) +
+    labs(title = "Top 20 Contributing Universities (2009-2021)",
+        x = element_blank(),
+        y = "Number of Contributors") +
+    theme(plot.title = element_text(hjust = 1, 
+                                face = "bold", 
+                                size = 12),
+          plot.margin = margin(.2, .5, .2, .2, "cm"),
+          legend.title = element_blank(),
+          legend.position = "bottom")
+
+ggsave("Plots/07_top_20_acad_inst.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/07_top_20_acad_inst.pdf", width = 7, height = 4, units = "in")
+
+```
+
+Stanford University is the academic institution with the highest number
+of contributors followed by University of California - Berkeley and
+University of Michigan - Ann Arbor.
+
+### Top 20 Contributing Research Labs
+
+```{r}
+
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+users <- dbReadTable(con, "codegov_users_sectors")
+
+dbDisconnect(con)
+
+orgs_count <- users |>
+  filter(grepl('Laboratory', organization)) |>
+  count(organization, name = 'Contributors', sort = T) |>
+  rename(Organization = organization) |>
+  arrange(desc(Contributors)) |>
+  top_n(20, Contributors)
+
+orgs_count |>
+  select(Organization, Contributors) |>
+  mutate(Organization = fct_reorder(Organization, Contributors)) |>
+  ggplot(aes(x = Organization, y = Contributors)) +
+    geom_bar(stat = "identity", fill = '#014d64', width=.6) +
+    geom_text(aes(label=Contributors), color='#014d64', position=position_dodge(width=0.5), hjust=-0, size = 8/.pt) +
+    coord_flip() +
+    theme(legend.title=element_blank()) +
+    labs(title = "Top 20 Contributing Research Labs",
+        x = element_blank(),
+        y = "Number of Contributors") +
+  theme(plot.title = element_text(hjust = 0, 
+                                face = "bold", 
+                                size = 12),
+          plot.margin = margin(.2, .5, .2, .2, "cm"),
+          legend.title = element_blank(),
+          legend.position = "bottom")
+
+ggsave("Plots/08_top_20_labs.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/08_top_20_labs.pdf", width = 7, height = 4, units = "in")
+```
+
+The Lawrence Livermore National Laboratory is has the highest number of
+contributors out of all Laboratories.
+
+### Top 20 Contributing Businesses
+
+```{r}
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+users <- dbReadTable(con, "codegov_users_sectors")
+
+dbDisconnect(con)
+
+orgs_count <- users |>
+  filter(sector == 'Business') |>
+  count(organization, name = 'Contributors', sort = T) |>
+  rename(Organization = organization) |>
+  arrange(desc(Contributors)) |>
+  top_n(20, Contributors)
+
+orgs_count |>
+  select(Organization, Contributors) |>
+  mutate(Organization = fct_reorder(Organization, Contributors)) |>
+  ggplot(aes(x = Organization, y = Contributors)) +
+    geom_bar(stat = "identity", fill = '#014d64', width=.6) +
+    coord_flip() +
+    #geom_text(aes(label=Contributors), color='white', position=position_dodge(width = 0.05), hjust=1.2, size = 7/.pt) +
+    theme(legend.title=element_blank()) +
+    labs(title = "Top 20 Contributing Businesses (2009-2021)",
+        x = element_blank(),
+        y = "Number of Contributors") +
+  theme(plot.title = element_text(hjust = 0, 
+                                face = "bold", 
+                                size = 12),
+          plot.margin = margin(.2, .5, .2, .2, "cm"),
+          legend.title = element_blank(),
+          legend.position = "bottom")
+
+  ggsave("Plots/09_top_20_business.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/09_top_20_business.pdf", width = 7, height = 4, units = "in")
+```
+
+Intel Corporation, Google and Kitware are the top 3 corporations with
+the highest number of contributors.
+
+------------------------------------------------------------------------
+
+## Cost Calculations
+
+```{r, message=FALSE, warning=FALSE}
+# 
+# # establishing connection and listing all tables in database
+# con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+#     dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+# 
+# counts_repo <- dbReadTable(con, "codegov_gh_commits_by_agency")
+# 
+# dbDisconnect(con)
+```
+
+```{r, include=FALSE}
+
+#Aggregating the lines of code by Agency
+
+# counts_agency <- counts_repo |>
+#   group_by(agency) |>
+#   summarise(total_commits = sum(commits),
+#             total_additions = sum(additions),
+#             total_deletions = sum(deletions),
+#             total_sum_adds_dels = sum(sum_adds_dels),
+#             total_net_adds_dels = sum(net_adds_dels)
+#             )
+```
+
+```{r}
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+agency_year_code <- dbReadTable(con, "codegov_gh_commits_by_year_agency")
+
+dbDisconnect(con)
+```
+
+```{r}
+agency_year_code_projects <- agency_year_code|>
+  group_by(agency, year) |>
+  summarise(projects = n())
+
+write_csv(agency_year_code_projects, "C:/Users/rahul/Desktop/CodeGov/Output/Agency_Projects_Year.csv")
+```
+
+```{r}
+
+year_projects <- agency_year_code|>
+  group_by(year) |>
+  summarise(projects = n(),
+            lines = sum(additions))
+
+```
+
+```{r}
+
+```
+
+```{r, include=FALSE}
+
+#Calculating the Costs
+
+library(data.table)
+
+agency_year_code <- as.data.table(agency_year_code)
+
+#COST BASED ON Additions
+agency_year_code[,person_months := round(2.5 * (2.4 * (additions/1000)^1.05)^0.38,5)]
+
+# Formula 1: round(2.5 * (2.4 * (additions/1000)^1.05)^0.38,5)
+# Formula 2: round(2.94 * 1.5 *(additions/1000)^1.0997,5)
+
+
+
+
+wage_table <- data.frame(year = c(2009, 2010, 2011, 2012, 2013, 2014,
+                                  2015, 2016, 2017, 2018, 2019, 2020, 2021),
+                         wages = c(162046,	164134, 168658, 173325, 177136, 182582, 187567, 191632, 195828, 199398, 204159, 210478 , 216786),
+                         deflator = c(1.1672463, 1.1513404, 1.1595931, 1.1595495, 1.1462383, 1.1360232, 1.1217853, 1.1100984, 1.0901915, 1.0653788, 1.0469545, 1.0220328, 1))
+
+
+agency_year_code |> count() # 7751144 repos
+agency_year_code |> distinct(agency) %>% count() # 7751144
+
+
+```
+
+```{r}
+investment_pre <- agency_year_code |>
+  select(slug, year, agency, person_months, additions) |>
+  filter(year > 2008 & year < 2022) |>
+  #filter(year == 2021) |>
+  left_join(wage_table, by = "year") |>
+  mutate(month_wages = (wages / 12),
+         investment = (person_months * month_wages)/deflator)# just added
+
+options(scipen=999)
+
+
+```
+
+```{r}
+
+investment_pre <- investment_pre |>
+  mutate(agency = case_when(
+  agency == "DOD" ~ "Department of Defense",
+  agency == "Department of Energy" ~ "Department of Energy",
+  agency == "Department of Homeland Security" ~ "Department of Homeland Security",
+  agency == "Department of Justice" ~ "Department of Justice",
+  agency == "Department of Labor" ~ "Department of Labor",
+  agency == "Education" ~ "Department of Education",
+  agency == "Election" ~ "Federal Election Commision",
+  agency == "Environmental Protection Agency" ~ "Environmental Protection Agency",
+  agency == "GSA" ~ "General Services Administration",
+  agency == "HHS" ~ "Department of Health & Human Services",
+  agency == "International" ~ "Agency for International Development",
+  agency == "NASA" ~ "National Aeronautics and Space Administration",
+  agency == "NSF" ~ "National Science Foundation",
+  agency == "SSA" ~ "Social Security Administration",
+  agency == "Small Business" ~ "Small Business Administration",
+  agency == "Transportation" ~ "Department of Transportation",
+  agency == "Treasury" ~ "Department of the Treasury",
+  agency == "USDA" ~ "Deparment of Agriculture",
+  agency == "Veteran" ~ "Department of Veterans Affairs"
+))
+```
+
+```{r}
+cost_by_agency <- investment_pre |>
+  select(agency, year, investment, additions, person_months) |>
+  group_by(agency, year) |>
+  summarise(total_cost = sum(investment, na.rm = T),
+            total_additions = sum(additions, na.rm = T),
+            total_pm = sum(person_months, na.rm = T))
+```
+
+```{r}
+
+acency_cost_summary <- cost_by_agency |>
+  group_by(agency) |>
+  summarise(Cost = sum(total_cost),
+            Additions = sum(total_additions),
+            `Person Months` = sum(total_pm))
+
+write_csv(acency_cost_summary, "C:/Users/rahul/Desktop/CodeGov/Output/Agency_Cost.csv")
+```
+
+#### Costs by Agency
+
+```{r}
+
+#Visualizing the Costs
+
+agency_cost_viz <- cost_by_agency |>
+  select(agency, total_cost) |>
+  summarise(Investment = sum(total_cost)) |>
+  arrange(desc(Investment))
+
+
+agency_cost_viz |>
+  select(agency, Investment) |>
+  mutate(agency = fct_reorder(agency, Investment)) |>
+  ggplot(aes(x = agency, y = Investment)) +
+    geom_bar(stat = "identity", fill = '#014d64', width=.6) +
+    scale_y_continuous(labels = label_number(prefix = "$", suffix = "M", scale = 1e-6, big.mark = ",")) +
+    coord_flip() +
+    labs(title = "OSS Investment by the U.S. Federal Government Agencies (2009-2021)",
+        x = element_blank(),
+        y = "Cost of Projects") +
+  theme(plot.title = element_text(hjust = 1, 
+                                face = "bold", 
+                                size = 12),
+          plot.margin = margin(.2, .2, .2, .2, "cm"))
+
+ggsave("Plots/10_cost_by_agency.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/10_cost_by_agency.pdf", width = 7, height = 4, units = "in")
+
+```
+
+**Not Running Code Below**
+
+------------------------------------------------------------------------
+
+```{r}
+
+
+
+check_1 <- unique(investment_pre$slug)
+  
+
+```
+
+```{r}
+
+investments_table <- investment_pre |>
+  group_by(agency, year) |>
+  summarise(projects = n(),
+            total_investment = sum(investment),
+            total_additions = sum(additions),
+            total_pm = sum(person_months)
+            )
+
+write_csv(investments_table, "C:/Users/rahul/Desktop/CodeGov/Output/Investment_table.csv")
+```
+
+```{r, include=FALSE}
+
+#Creating Summary Table
+
+counts_by_agency <- counts_by_agency |>
+  select(agency, total_commits, total_additions, adds_w_gross) |>
+  left_join(agency, join_by(agency)) |>
+  rename(Agency = agency,
+         Commits = total_commits,
+         `Lines of Code` = total_additions,
+         `Cost of Development` = adds_w_gross,
+         Projects = projects,
+         )
+  
+counts_by_agency$Agency[counts_by_agency$Agency == 'NASA'] <- 'National Aeronautics and Space Administration'
+
+
+```
+
+```{r, include=FALSE,message=FALSE, warning=FALSE}
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+counts_contrib <- dbReadTable(con, "codegov_agency_contributors")
+
+dbDisconnect(con)
+```
+
+#### Summary Table by Agencies
+
+```{r}
+
+#Preparing Final Summary Table
+
+counts_by_agency <- counts_by_agency |>
+  left_join(counts_contrib, join_by(Agency == agency)) |>
+  select(!index)
+
+
+counts_by_agency <- counts_by_agency |>
+  rename(Contributors = contributors)
+
+counts_by_agency
+```
+
+```{r, include=FALSE,message=FALSE, warning=FALSE}
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+edgelist <- dbReadTable(con, "codegov_edgelist_users")
+
+dbDisconnect(con)
+```
+
+------------------------------------------------------------------------
+
+```{r}
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+users_table <- dbReadTable(con, "codegov_users_sectors")
+
+dbDisconnect(con)
+
+
+```
+
+```{r}
+
+
+length(unique(users_table$login))
+
+new_df <- users_table |>
+  select(login, location)
+```
+
+```{r}
+
+dim(which(new_df[new_df$location == NA,]))
+```
+
+```{r}
+
+
+new <- subset(new_df, !is.na(new_df$location))
+```
+
+```{r}
+
+length(unique(new$login))
+```
+
+```{r}
+
+sum(duplicated(new$login))
+
+x(duplicated)
+```
+
+```{r}
+new %>% group_by_all() %>% count
+```
+
+```{r}
+
+sectors_filtered <- users_table |>
+  select(login, sector) |>
+  filter(sector != "Unknown")
+
+length()
+```
+
+```{r}
+sectors_filtered <- sectors_filtered |>
+  
+```
+
+```{r}
+# sectors_filtered |>
+#   group_by(sectors, login) |>
+#   summarise(total = sum(sectors))
+```
+
+```{r}
+sectors_filtered <- unique(sectors_filtered)
+
+check_sectors <- sectors_filtered |>
+  group_by(login) |>
+  summarise(num_sectors = n())
+```
+
+```{r}
+dim(check_sectors[which(check_sectors$num_sectors == 1),])
+```
+
+```{r}
+
+int_sectors <- check_sectors |>
+  filter(num_sectors == 1) |>
+  select(login)
+
+```
+
+```{r}
+
+saved_df <- sectors_filtered[which(sectors_filtered$login %in% int_sectors),]
+
+```
+
+```{r}
+
+sectors_done <- sectors_filtered |>
+  filter(login %in% int_sectors)
+
+class(int_sectors$login)
+
+
+sectors_done <- semi_join(sectors_filtered, int_sectors, by = c('login' = 'login'))
+
+```
+
+```{r}
+length(unique(sectors_done$login))
+
+table(sectors_done$sector)
+```
+
+```{r}
+
+
+
+length(unique(sectors_filtered$login))
+```
+
+```{r}
+dim(unique(sectors_filtered))
+```
+
+```{r}
+
+sectors_filtered <- sectors_filtered |>
+  unique(sectors)
+
+sectors_tot <- sectors |>
+  gather(key = "Sectors", value = "Contributors")
+```
+
+------------------------------------------------------------------------
+
+```{r}
+country_df <- users_table |>
+  select(login, country)
+
+country_df <- unique(country_df)
+
+country_df <- na.omit(country_df)
+```
+
+Replacing NAs
+
+```{r}
+
+
+# write out all the offending strings
+na_strings <- c("NA|NA|NA|NA|NA|NA|NA|NA|NA|NA|NA|NA",
+                "NA|NA|NA|NA|NA|NA|NA|NA|NA|NA|NA",
+                "NA|NA|NA|NA|NA|NA|NA|NA|NA|NA",
+                "NA|NA|NA|NA|NA|NA|NA|NA|NA",
+                "NA|NA|NA|NA|NA|NA|NA|NA", 
+                "NA|NA|NA|NA|NA|NA|NA",
+                "NA|NA|NA|NA|NA|NA",
+                "NA|NA|NA|NA|NA",
+                "NA|NA|NA|NA",
+                "NA|NA|NA",
+                "NA|NA",
+                "NA")
+
+
+country_df <- country_df |>
+  replace_with_na_all(condition = ~.x %in% na_strings)
+
+```
+
+```{r}
+country_df <- na.omit(country_df)
+```
+
+```{r}
+
+length(unique(country_df$login))
+```
+
+```{r}
+dim(unique(country_df))
+```
+
+```{r}
+country_table <- as.data.frame(table(country_df$country))
+
+write_csv(country_table, "C:/Users/rahul/Desktop/CodeGov/Output/country_table.csv")
+```
+
+```{r}
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+repos_table <- dbReadTable(con, "codegov_gh_data_repos")
+
+dbDisconnect(con)
+
+
+```
+
+```{r}
+
+write_csv(hosting, "C:/Users/rahul/Desktop/CodeGov/Output/hosting_table.csv")
+```
+
+------------------------------------------------------------------------
+
+## Network Stuff
+
+```{r}
+degree_net <- read.csv("C:/Users/rahul/Desktop/CodeGov/degree_centrality_agency_net.csv", header = TRUE)
+```
+
+```{r}
+
+degree_net <- degree_net |>
+    mutate(agency = case_when(
+  agency == "DOD" ~ "Department of Defense",
+  agency == "Department of Energy" ~ "Department of Energy",
+  agency == "Department of Homeland Security" ~ "Department of Homeland Security",
+  agency == "Department of Justice" ~ "Department of Justice",
+  agency == "Department of Labor" ~ "Department of Labor",
+  agency == "Education" ~ "Department of Education",
+  agency == "Election" ~ "Federal Election Commision",
+  agency == "Environmental Protection Agency" ~ "Environmental Protection Agency",
+  agency == "GSA" ~ "General Services Administration",
+  agency == "HHS" ~ "Department of Health & Human Services",
+  agency == "International" ~ "Agency for International Development",
+  agency == "NASA" ~ "National Aeronautics and Space Administration",
+  agency == "NSF" ~ "National Science Foundation",
+  agency == "SSA" ~ "Social Security Administration",
+  agency == "Small Business" ~ "Small Business Administration",
+  agency == "Transportation" ~ "Department of Transportation",
+  agency == "Treasury" ~ "Department of the Treasury",
+  agency == "USDA" ~ "Deparment of Agriculture",
+  agency == "Veteran" ~ "Department of Veterans Affairs"
+))
+```
+
+```{r}
+
+ggplot(degree_net, aes(degree, agency)) + geom_boxplot()
+```
+
+```{r}
+
+`%!in%` = Negate(`%in%`)
+
+degree_net <- degree_net |>
+  filter(agency %!in% c("National Science Foundation", "Social Security Administration", "Small Business Administration", "Department of Justice", "Department of Education", "Department of the Treasury","Federal Election Commision", "Environmental Protection Agency", "Department of Veterans Affairs"))
+
+
+degree_net %>%
+  mutate(agency = fct_reorder(agency, degree, .fun='median')) %>%
+  ggplot( aes(x=reorder(agency, degree), y=degree)) + 
+    geom_boxplot() +
+  scale_y_log10(
+    breaks = scales::trans_breaks("log10", function(x) 10^x),
+    labels = scales::trans_format("log10", scales::math_format(10^.x))
+  ) +
+  theme_economist() +
+  coord_flip() +
+  annotation_logticks(sides = 'lr') +
+  labs(title = "Degree Centrality of Nodes in Contributor Network",
+        x = element_blank(),
+        y = "Degree Centrality") +
+  theme(plot.title = element_text(hjust = 3.5, 
+                                face = "bold", 
+                                size = 12),
+          plot.margin = margin(.2, .2, .2, .2, "cm"),
+          legend.title = element_blank(),
+          legend.position = "bottom")
+  theme(panel.grid.minor = element_blank())
+  
+ggsave("Plots/11_degree_centrality_box.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/11_degree_centrality_box.pdf", width = 7, height = 4, units = "in")
+```
+
+### Between Centrality
+
+```{r}
+between_net <- read.csv("C:/Users/rahul/Desktop/CodeGov/between_centrality_agency_net.csv", header = TRUE)
+```
+
+```{r}
+between_net <- between_net |>
+    mutate(agency = case_when(
+  agency == "DOD" ~ "Department of Defense",
+  agency == "Department of Energy" ~ "Department of Energy",
+  agency == "Department of Homeland Security" ~ "Department of Homeland Security",
+  agency == "Department of Justice" ~ "Department of Justice",
+  agency == "Department of Labor" ~ "Department of Labor",
+  agency == "Education" ~ "Department of Education",
+  agency == "Election" ~ "Federal Election Commision",
+  agency == "Environmental Protection Agency" ~ "Environmental Protection Agency",
+  agency == "GSA" ~ "General Services Administration",
+  agency == "HHS" ~ "Department of Health & Human Services",
+  agency == "International" ~ "Agency for International Development",
+  agency == "NASA" ~ "National Aeronautics and Space Administration",
+  agency == "NSF" ~ "National Science Foundation",
+  agency == "SSA" ~ "Social Security Administration",
+  agency == "Small Business" ~ "Small Business Administration",
+  agency == "Transportation" ~ "Department of Transportation",
+  agency == "Treasury" ~ "Department of the Treasury",
+  agency == "USDA" ~ "Deparment of Agriculture",
+  agency == "Veteran" ~ "Department of Veterans Affairs"
+))
+```
+
+```{r}
+
+ggplot(between_net, aes(betweeness, agency)) + geom_boxplot()
+```
+
+```{r}
+
+`%!in%` = Negate(`%in%`)
+
+between_net <- between_net |>
+  filter(agency %!in% c("National Science Foundation", "Social Security Administration", "Small Business Administration", "Department of Justice", "Department of Education", "Department of the Treasury","Federal Election Commision", "Environmental Protection Agency", "Department of Veterans Affairs"))
+
+
+between_net %>%
+  mutate(agency = fct_reorder(agency, betweeness, .fun='median')) %>%
+  ggplot( aes(x=reorder(agency, betweeness), y=betweeness)) + 
+    geom_boxplot() +
+  scale_y_log10(
+    breaks = scales::trans_breaks("log10", function(x) 10^x),
+    labels = scales::trans_format("log10", scales::math_format(10^.x))
+  ) +
+  theme_economist() +
+  coord_flip() +
+  annotation_logticks(sides = 'lr') +
+  labs(title = "Betweeness Centrality of Nodes in Contributor Network",
+        x = element_blank(),
+        y = "Betweeness Centrality") +
+  theme(plot.title = element_text(hjust = 2.5, 
+                                face = "bold", 
+                                size = 12),
+          plot.margin = margin(.2, .2, .2, .2, "cm"),
+          legend.title = element_blank(),
+          legend.position = "bottom")
+  theme(panel.grid.minor = element_blank())
+  
+ggsave("Plots/12_between_centrality_box.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/12_between_centrality_box.pdf", width = 7, height = 4, units = "in")
+```
+
+------------------------------------------------------------------------
+
+## Project Impact Metrics
+
+```{r}
+
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+repos_table <- dbReadTable(con, "codegov_gh_data_repos")
+
+dbDisconnect(con)
+
+```
+
+```{r}
+
+# establishing connection and listing all tables in database
+con <- dbConnect(MySQL(), user = Sys.getenv("DB_USERNAME"), password = Sys.getenv("DB_PASSWORD"),
+    dbname = "codegov", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+
+agency_slugs <- dbReadTable(con, "codegov_slugs")
+
+dbDisconnect(con)
+
+
+```
+
+```{r}
+final_repos <- repos_table
+
+final_repos$agency <- agency_slugs$agency
+final_repos$slug <- agency_slugs$slug
+```
+
+```{r}
+final_repos <- final_repos |>
+  select(agency, fork_count, stargazer_count, pull_requests_count) |>
+  mutate(agency = case_when(
+  agency == "DOD" ~ "Department of Defense",
+  agency == "Department of Energy" ~ "Department of Energy",
+  agency == "Department of Homeland Security" ~ "Department of Homeland Security",
+  agency == "Department of Justice" ~ "Department of Justice",
+  agency == "Department of Labor" ~ "Department of Labor",
+  agency == "Education" ~ "Department of Education",
+  agency == "Election" ~ "Federal Election Commision",
+  agency == "Environmental Protection Agency" ~ "Environmental Protection Agency",
+  agency == "GSA" ~ "General Services Administration",
+  agency == "HHS" ~ "Department of Health & Human Services",
+  agency == "International" ~ "Agency for International Development",
+  agency == "NASA" ~ "National Aeronautics and Space Administration",
+  agency == "NSF" ~ "National Science Foundation",
+  agency == "SSA" ~ "Social Security Administration",
+  agency == "Small Business" ~ "Small Business Administration",
+  agency == "Transportation" ~ "Department of Transportation",
+  agency == "Treasury" ~ "Department of the Treasury",
+  agency == "USDA" ~ "Deparment of Agriculture",
+  agency == "Veteran" ~ "Department of Veterans Affairs"
+))
+
+```
+
+```{r}
+
+
+final_repos |>
+  na.omit(agency) |>
+  mutate(agency = fct_reorder(agency, fork_count, .fun='median')) %>%
+  ggplot( aes(x=reorder(agency, fork_count), y=fork_count)) + 
+    geom_boxplot() +
+  scale_y_log10(
+    breaks = scales::trans_breaks("log10", function(x) 10^x),
+    labels = scales::trans_format("log10", scales::math_format(10^.x))
+  ) +
+  theme_economist() +
+  coord_flip() +
+  annotation_logticks(sides = 'lr') +
+  labs(title = "Distribution of Fork Counts for OSS Projects",
+        x = element_blank(),
+        y = "Forks") +
+  theme(plot.title = element_text(hjust = 22, 
+                                face = "bold", 
+                                size = 12),
+          plot.margin = margin(.2, .2, .2, .2, "cm"),
+          legend.title = element_blank(),
+          legend.position = "bottom")
+  theme(panel.grid.minor = element_blank())
+  
+ggsave("Plots/13_fork_counts_box.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/13_fork_counts_box.pdf", width = 7, height = 4, units = "in")
+```
+
+```{r}
+
+final_repos |>
+  na.omit(agency) |>
+  mutate(agency = fct_reorder(agency, stargazer_count, .fun='median')) %>%
+  ggplot( aes(x=reorder(agency, stargazer_count), y=stargazer_count)) + 
+    geom_boxplot() +
+  scale_y_log10(
+    breaks = scales::trans_breaks("log10", function(x) 10^x),
+    labels = scales::trans_format("log10", scales::math_format(10^.x))
+  ) +
+  theme_economist() +
+  coord_flip() +
+  annotation_logticks(sides = 'lr') +
+  labs(title = "Distribution of Stargazer Counts for OSS Projects",
+        x = element_blank(),
+        y = "Stargazers") +
+  theme(plot.title = element_text(hjust = 4, 
+                                face = "bold", 
+                                size = 12),
+          plot.margin = margin(.2, .2, .2, .2, "cm"),
+          legend.title = element_blank(),
+          legend.position = "bottom")
+  theme(panel.grid.minor = element_blank())
+  
+ggsave("Plots/14_star_counts_box.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/14_star_counts_box.pdf", width = 7, height = 4, units = "in")
+```
+
+```{r}
+
+final_repos |>
+  na.omit(agency) |>
+  mutate(agency = fct_reorder(agency, pull_requests_count, .fun='median')) %>%
+  ggplot( aes(x=reorder(agency, pull_requests_count), y=pull_requests_count)) + 
+    geom_boxplot() +
+  scale_y_log10(
+    breaks = scales::trans_breaks("log10", function(x) 10^x),
+    labels = scales::trans_format("log10", scales::math_format(10^.x))
+  ) +
+  theme_economist() +
+  coord_flip() +
+  annotation_logticks(sides = 'lr') +
+  labs(title = "Distribution of Pull Requests for OSS Projects",
+        x = element_blank(),
+        y = "Pull Requests") +
+  theme(plot.title = element_text(hjust = 7, 
+                                face = "bold", 
+                                size = 12),
+          plot.margin = margin(.2, .2, .2, .2, "cm"),
+          legend.title = element_blank(),
+          legend.position = "bottom")
+  theme(panel.grid.minor = element_blank())
+  
+ggsave("Plots/15_pull_requests_box.emf", width = 7, height = 4, units = "in")
+ggsave("Plots/15_pull_requests_box.pdf", width = 7, height = 4, units = "in")
+```
