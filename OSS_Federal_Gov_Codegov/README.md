@@ -292,7 +292,3 @@ network metrics.</td>
 </tr>
 </tbody>
 </table>
-
-### Dissemination
-
-More information to be added.
