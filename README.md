@@ -39,3 +39,10 @@ https://www.bls.gov/dpr/gasp/gasp-2023-presentations.htm
 Abstract: Attributing Credit and Measuring Impact of Open Source Software Using Fractional Counting
 Conference: Symposium on Data Science & Statistics
 https://ww3.aievolution.com/AMSTATevents/index.cfm?do=ev.viewEv&ev=3351
+
+## Packages
+
+The GitRipper package was developed to support this work. GitRipper is a python module can be used to get repository and commits information given a public GitHub owner and repository. This module supports multiple API keys with built-in usage monitoring and balancing and can help with large-scale data collection.
+
+The package is available on this repository: https://github.com/AnilBattalahalli/GitRipper
+> [GIT RIPPER]([https://github.com/AnilBattalahalli/GitRipper](https://github.com/AnilBattalahalli/GitRipper)")
