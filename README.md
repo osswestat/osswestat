@@ -44,5 +44,5 @@ https://ww3.aievolution.com/AMSTATevents/index.cfm?do=ev.viewEv&ev=3351
 
 The GitRipper package was developed to support this work. GitRipper is a python module can be used to get repository and commits information given a public GitHub owner and repository. This module supports multiple API keys with built-in usage monitoring and balancing and can help with large-scale data collection.
 
-The package is available on this repository: https://github.com/AnilBattalahalli/GitRipper
-> [GIT RIPPER]([https://github.com/AnilBattalahalli/GitRipper](https://github.com/AnilBattalahalli/GitRipper)")
+The package is available on this repository:
+> [GIT RIPPER](https://github.com/AnilBattalahalli/GitRipper)
