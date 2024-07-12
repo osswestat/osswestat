@@ -1,0 +1,378 @@
+---
+title: "CRAN Cleaning"
+format: 
+  html:
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    number-sections: true
+    code-fold: false
+    embed-resources: true
+execute: 
+  warning: false
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+## Introduction
+
+In this Quarto Document, we present the code that shows the how the CRAN data was collected and the cleaning processes that were done to make the data fit for the analysis. The data was collected through a function R provides to connect to the CRAN database to obtain metadata on all packages that currently exist (This code shows the process that was done in September 2023 to save a dataframe of the full CRAN database and the metadata of interest. Running this code at different dates will vary the output of this document, as the CRAN database is always subject to change). Total downloads is not included already when the CRAN database is loaded, so another R function from the cranlogs package is used to obtain this information for each individual package. The cleaning processes included selecting only the metadata variables we were interested in for further analysis for specific packages (Package Name, Authors, Maintainers, Titles of packages, Descriptions of packages, Dependencies, Reverse_Dependencies, All-time download counts and Normalized download counts, and Github URLs), cleaning text data for character variables like author names, and extracting institution and sector information from maintainer emails. 
+
+```{r, message=FALSE}
+library(cranlogs)
+library(tidyverse)
+library(RMySQL)
+library(devtools)
+library(ggwes)
+library(kableExtra)
+library(tidyorgs)
+library(knitr)
+```
+
+## File List
+
+### Input File
+
+-   cran: Full CRAN Database as of Septmeber 2023 with all metadata
+
+```{r}
+# load in R CRAN database
+cran <- tools::CRAN_package_db()
+```
+
+### Output File
+
+-   cran: Full CRAN Database as of Septmeber 2023 with selected metadata
+
+## Data Preparation
+
+### Data Description
+
+```{r}
+colnames(cran)
+
+colnames(cran)[63] <- "Reverse_Depends"
+```
+
+```{r}
+# Create a dataframe
+variables <- c("Package", "Version", "Priority", "Depends", "Imports", "LinkingTo", 
+               "Suggests", "Enhances", "License", "License_is_FOSS", "License_restricts_use", 
+               "OS_type", "Archs", "MD5sum", "NeedsCompilation", "Additional_repositories", 
+               "Author", "Authors@R", "Biarch", "BugReports", "BuildKeepEmpty", "BuildManual", 
+               "BuildResaveData", "BuildVignettes", "Built", "ByteCompile", "Classification/ACM", 
+               "Classification/ACM-2012", "Classification/JEL", "Classification/MSC", 
+               "Classification/MSC-2010", "Collate", "Collate.unix", "Collate.windows", "Contact", 
+               "Copyright", "Date", "Date/Publication", "Description", "Encoding", "KeepSource", 
+               "Language", "LazyData", "LazyDataCompression", "LazyLoad", "MailingList", "Maintainer", 
+               "Note", "Packaged", "RdMacros", "StagedInstall", "SysDataCompression", 
+               "SystemRequirements", "Title", "Type", "URL", "UseLTO", "VignetteBuilder", "ZipData", 
+               "Path", "X-CRAN-Comment", "Published", "Reverse depends", "Reverse imports", 
+               "Reverse linking to", "Reverse suggests", "Reverse enhances")
+
+descriptions <- c("The name of the package.", "The version of the package.", 
+                  "If the package is a base or recommended package.", 
+                  "A list of packages that this package depends on.", 
+                  "A list of packages this package imports.", 
+                  "A list of packages this package is linking to at the C/C++ level.", 
+                  "A list of packages this package suggests for additional functionality.", 
+                  "A list of packages this package enhances, but does not depend on.", 
+                  "The license of the package.", 
+                  "Whether the license is free and open-source.", 
+                  "Whether the license restricts use.", 
+                  "Operating system type.", "Architecture the package is built for.", 
+                  "The MD5 checksum of the package file.", 
+                  "Whether the package needs compilation.", 
+                  "Any additional repositories where this package can be found.", 
+                  "The author(s) of the package.", 
+                  "The author(s) of the package in machine-readable form.", 
+                  "Whether the package can be installed on both 32 and 64-bit systems.", 
+                  "The URL for reporting bugs.", 
+                  "Whether to keep empty directories when building the package.", 
+                  "Whether to build the package manual.", 
+                  "Whether to resave the data when building the package.", 
+                  "Whether to build vignettes when building the package.", 
+                  "The R version the package was built under.", 
+                  "Whether to byte-compile the package.", 
+                  "The ACM classification of the package.", 
+                  "The ACM-2012 classification of the package.", 
+                  "The JEL classification of the package.", 
+                  "The MSC classification of the package.", 
+                  "The MSC-2010 classification of the package.", 
+                  "The collation order for the package documentation.", 
+                  "The Unix-specific collation order for the package documentation.", 
+                  "The Windows-specific collation order for the package documentation.", 
+                  "The contact information for the package maintainer.", 
+                  "The copyright notice for the package.", 
+                  "The date the package was published.", 
+                  "The date the package was published.", 
+                  "A description of the package.", 
+                  "The character encoding of the package files.", 
+                  "Whether to keep the source code when building the package.", 
+                  "The language(s) the package is available in.", 
+                  "Whether the data in the package is loaded lazily.", 
+                  "The compression type for lazy data loading.", 
+                  "Whether the package uses lazy loading.", 
+                  "The URL for the package mailing list.", 
+                  "The package maintainer.", "Any additional notes about the package.", 
+                  "The date the package was packaged.", 
+                  "Whether the package uses Rd macros.", 
+                  "Whether the package uses staged installation.", 
+                  "The type of system data compression used.", 
+                  "Any system requirements for the package.", 
+                  "The title of the package.", 
+                  "The type of package (e.g., 'Package', 'Data', 'Documentation', etc.).", 
+                  "The URL for the package, if available.", 
+                  "Whether the package uses Link-Time Optimization.", 
+                  "The package(s) used to build the vignettes.", 
+                  "Whether the data directory should be zipped.", 
+                  "The path of the package directory.", 
+                  "Any additional comments from CRAN.", 
+                  "Whether the package is published.", 
+                  "Other packages that depends on this package.", 
+                  "Other packages that imports this package.", 
+                  "Other packages that link to this package.", 
+                  "Other packages that suggests this package.", 
+                  "Other packages that enhances this package.")
+
+Variable_df <- data.frame(variables, descriptions)
+
+
+Variable_df %>%
+  kbl(caption = "Variable Descriptions for CRAN Database", escape = F, 
+      col.names = c("Variables", "Descriptions"))%>%
+  kable_classic()%>%
+  kable_styling(font_size = 12, full_width = T)%>%
+ row_spec(0, bold = T, background = westat_blue(), color = "white")%>%
+   column_spec(1, bold = T, border_right = T)%>%
+  scroll_box(width = "100%", height = "500px") 
+
+```
+
+After selecting only the variables of interest and filtering for unique names in the package field, we find that there are 19852 packages currently on CRAN (9/7/2023).
+
+```{r}
+# selecting variables of interest
+cran <- cran %>%
+ select(Package, Depends, License, Author, 
+          Description, Maintainer, Title, URL, Reverse_Depends)
+```
+
+#### Missing Data
+
+```{r, tidy=TRUE, eval=FALSE}
+##### Looking at missing data ######
+
+## How many packages have.... ##
+
+## Titles
+cran %>% 
+    summarise(Title = mean(!is.na(Title)))
+
+## Description
+cran %>% 
+    summarise(Description = mean(!is.na(Description)))
+
+## Dependencies
+cran %>% 
+    summarise(Dependencies = mean(!is.na(Depends)))
+
+## Authors
+cran %>% 
+    summarise(Author = mean(!is.na(Author)))
+
+## Maintainer
+cran %>% 
+    summarise(Maintainer = mean(!is.na(Maintainer)))
+
+## URL
+cran %>% 
+    summarise(URL = mean(!is.na(URL)))
+
+
+## Reverse Depends
+cran %>% 
+    summarise(Reverse_Depends = mean(!is.na(Reverse_Depends)))
+
+```
+
+```{r}
+### Creating missing table
+
+Variable <- c( "Title", "Description", "Author","Depends", "Reverse Depends",
+"Maintainer", "URL")
+
+Missing <- c("0%", "0%", "0%", "0%", "0%", "0%", "45%")
+
+Cran_missing <- as.data.frame(cbind(Variable, Missing))
+
+Cran_missing %>%
+  kbl(caption = "Missing Data for CRAN Packages", escape = F)%>%
+  kable_classic()%>%
+   kable_styling(font_size = 12, full_width = T)%>%
+ row_spec(0, bold = T, background = westat_blue(), color = "white")
+
+```
+
+### Cleaning Text Data
+
+This code chunk removes the brackets and other text within the authors field that is not needed for counting the number of authors per package. This wraps up the data collection, description, and cleaning processes that were done before beginning analysis. All other transformations and cleaning codes were used during the analysis process.
+
+```{r, tidy=TRUE}
+###### Cleaning author data #####
+
+
+## remove text between brackets
+
+author_clean1 <- function(x){
+  gsub("\\[[^]]*]", "",x)
+}
+
+
+## remove line breaks
+
+author_clean2 <- function(x){
+  gsub("[\r\n]", "", x)
+}
+
+
+### apply function to authors variables
+
+cran$Author <- author_clean1(cran$Author)
+
+cran$Author <- author_clean2(cran$Author)
+```
+
+### Identifying Organizations from Maintainer Emails
+
+The organization is extracted from the maintainer email and then the tidyorgs package is used to categorize the email as belonging to either government, academic, nonprofit, or business. The data is saved in an object titled "Inst". In the 19,852 packages, we were able to extract an organization from 6981 of them. If we filter by distinct emails only, there are 3830 observations total. The reason the same email can show up multiple times is because the same email can be a maintainer of multiple packages.
+
+We will save institution, sector, and country analysis for our research question section in the analysis section. The purpose of this is to show how the data was collected before we move into that analysis
+
+```{r, tidy=TRUE, eval=FALSE}
+##### Cleaning email variable to extract Organization ####
+
+cran$email <- sub(".*<", "", cran$Maintainer)  
+cran$email <- gsub(">", "", cran$email)
+
+
+### posit is replaced with rstudio, as these are the same thing
+
+cran$email  <- gsub("@posit.co", "@rstudio.com", cran$email)
+
+# searching for government, academic, nonprofit, and business emails
+
+user_emails_to_orgs1 <- cran %>%
+  email_to_orgs(email, input = email, output = Institution, "government")
+
+user_emails_to_orgs2 <- cran %>%
+  email_to_orgs(email, input = email, output = Institution, "academic") 
+
+user_emails_to_orgs3 <- cran %>%
+  email_to_orgs(email, input = email, output = Institution, "nonprofit") 
+
+user_emails_to_orgs4 <- cran %>%
+  email_to_orgs(email, input = email, output = Institution, "business") 
+
+# creating an identifier variable for type of institution
+
+user_emails_to_orgs1$Sector <- "Government"
+
+user_emails_to_orgs2$Sector <- "Academic"
+
+user_emails_to_orgs3$Sector <- "Nonprofit"
+
+user_emails_to_orgs4$Sector <- "Business"
+
+# Binding to one dataframe
+
+Inst <- as.data.frame(rbind(user_emails_to_orgs1, user_emails_to_orgs2, 
+                            user_emails_to_orgs3, user_emails_to_orgs4))
+
+# Filtering for distinct emails
+Inst_filtered <- Inst %>%
+                        distinct(email, .keep_all = T)
+
+cran <- cran %>% left_join(Inst_filtered, by = "email")
+
+### Create Mainatiner Name variable
+
+cran$Maintainer_Name <- gsub(" <.*$", "", cran$Maintainer)
+
+# Fill in those with the same Mainatinaer name to have the same institution
+cran <- cran %>%
+  group_by(Maintainer_Name) %>%
+  fill(Sector, Institution, .direction = "downup") %>%
+  ungroup()
+```
+
+
+### Collecting Downloads
+
+```{r, eval=FALSE}
+
+########################## yearly downloads ####################################
+
+get_downloads_by_year <- function(package_name){
+  downloads <- cran_downloads(packages = package_name, from = "1997-01-01",
+                              to = "2023-05-03")
+  downloads$year <- format(downloads$date, "%Y") # add a year column
+  yearly_downloads <- aggregate(downloads$count, by=list(downloads$year), FUN=sum)
+  names(yearly_downloads) <- c("Year", "Downloads") # renaming the columns
+  yearly_downloads$Package <- package_name # add the package name to each row
+  return(yearly_downloads)
+}
+
+# Initializing an empty list
+downloads_by_year <- list()
+
+# Running a loop across all packages
+for (i in seq_along(cran$Package)) {
+  downloads_by_year[[i]] <- get_downloads_by_year(cran$Package[i])
+}
+
+
+
+# Binding all the dataframes together
+downloads_by_year_df <- do.call(rbind, downloads_by_year)
+
+
+# Filter out every year where downloads = 0
+downloads_by_year_df<- downloads_by_year_df %>%
+                            filter(Downloads != 0)
+
+## Create Downloads all-time and Downloads normalized
+Cran_Downloads_Year <- downloads_by_year_df %>%
+  group_by(Package) %>%
+  mutate(
+    Downloads_All_Time = sum(Downloads),
+    Downloads_Normalized = round(sum(Downloads) / n())
+  ) %>%
+  ungroup()
+
+## Join Download Data to df
+
+Download_Data <- Cran_Downloads_Year %>%
+  select(Package, Downloads_All_Time, Downloads_Normalized) %>%
+  distinct(Package, .keep_all = TRUE)
+
+cran <- cran %>% left_join(Download_Data, by = "Package")
+```
+
+
+
+## Save Output File
+
+```{r, eval =FALSE}
+cran <- cran %>%
+  select(Package, URL, Maintainer, Maintainer_Name, email, Institution, Sector, Title, 
+         Description, Depends, Reverse_Depends, 
+         Author, Downloads_All_Time, Downloads_Normalized)
+
+### save to databse
+con <- dbConnect(MySQL(), user = "", password = "",
+    dbname = "", host = "")
+
+ dbWriteTable(con, name = "package_database", cran)
+```

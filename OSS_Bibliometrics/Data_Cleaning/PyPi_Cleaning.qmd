@@ -1,0 +1,226 @@
+---
+title: "Python Cleaning"
+format: 
+  html:
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    number-sections: true
+    code-fold: false
+    embed-resources: true
+execute: 
+  warning: false
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+# Introduction
+
+In this Quarto document, we present the code that was used to prepare Python data from our database into a single data frame to be used for analysis. The final Python data frame is at the user level, and contains no information for maintainer level analysis. 
+
+```{r, message=FALSE}
+library(tidyverse)
+library(RMySQL)
+library(ggwes)
+library(knitr)
+library(kableExtra)
+library(pander)
+library(ggthemes)
+library(tidyorgs)
+library(diverstidy)
+```
+
+# File List
+
+## Input Files
+
+```{r, include=FALSE, eval=FALSE}
+# load in the downloads by year
+con <- dbConnect(MySQL(), user = "admin", password = "OSS022323",
+    dbname = "python", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+```
+
+-   python_dependencies: PyPi package dependencies
+
+-   python_repos: PyPi GitHub repos loaded from database containing repository metrics
+
+-   python_github: PyPi GitHub packages
+
+-   python_commits: PyPi GitHub user commit data containing additions and deletions as well as location data
+
+```{r, eval=FALSE}
+python_dependencies <- read.csv("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\python_dependencies.csv") %>%
+            select(-X)
+
+python_repos <- read.csv("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\python_repos.csv") %>%
+            select(-X)
+
+python_github <- read.csv("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\python_github.csv") %>%
+            select(-X)
+
+python_commits <- read.csv("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\python_user_commits.csv") %>%
+            select(-X)
+
+```
+
+
+```{r, eval=FALSE}
+### create slug variable for github packages
+python_dependencies <- python_github %>%
+  mutate(slug = paste0(Owner, "/", Repo)) %>%
+  select(-Owner, -Repo)%>%
+  left_join(python_dependencies, by = "Package")
+
+
+### create slug variable for commit data
+python_commits <- python_commits %>%
+  mutate(slug = paste0(repo_owner, "/", repo_name)) %>%
+  select(-repo_owner, -repo_name)
+
+### create slug variable for repo data
+python_repos <- python_repos %>%
+  mutate(slug = paste0(owner, "/", repo)) %>%
+  select(-owner, -repo)
+
+### aggregate python data by total additions
+python_commits_total <- python_commits %>%
+  group_by(slug, author_user_login) %>%
+  mutate(total_additions = sum(additions)) %>%
+  arrange(slug, author_user_login) %>%
+  slice(1) %>%
+  ungroup()
+```
+
+## Data Methods
+
+### Extracting and cleaning organizations
+
+The organization is extracted from the author email in the commits dataframe and then the tidyorgs package is used to categorize the email as belonging to either government, academic, nonprofit, or business. The data is saved in an object titled “Inst" and this is joined to the commits dataframe.
+
+```{r, eval=FALSE}
+user_emails_to_orgs1 <- python_commits_total %>%
+  email_to_orgs(author_email, input = author_email, output = Institution, "government")
+
+user_emails_to_orgs2 <- python_commits_total %>%
+  email_to_orgs(author_email, input = author_email, output = Institution, "academic") 
+
+user_emails_to_orgs3 <- python_commits_total %>%
+  email_to_orgs(author_email, input = author_email, output = Institution, "nonprofit") 
+
+user_emails_to_orgs4 <- python_commits_total %>%
+  email_to_orgs(author_email, input = author_email, output = Institution, "business") 
+
+# creating an identifier variable for type of institution
+
+user_emails_to_orgs1$Sector <- "Government"
+
+user_emails_to_orgs2$Sector <- "Academic"
+
+user_emails_to_orgs3$Sector <- "Nonprofit"
+
+user_emails_to_orgs4$Sector <- "Business"
+
+# Binding to one dataframe
+
+Inst <- as.data.frame(rbind(user_emails_to_orgs1, user_emails_to_orgs2, 
+                            user_emails_to_orgs3, user_emails_to_orgs4))
+
+# Filtering for distinct emails
+Inst_filtered <- Inst %>%
+                        distinct(author_email, .keep_all = T)
+
+python_commits_total <- python_commits_total %>% left_join(Inst_filtered, by = "author_email")
+
+## replace Na with Unknown in sector and institution
+
+# Replace NA values in the Sector column
+python_commits_total$Sector[is.na(python_commits_total$Sector)] <- "Unknown"
+
+# Replace NA values in the Institution column
+python_commits_total$Institution[is.na(python_commits_total$Institution)] <- "Unknown"
+```
+
+
+### Extracting and cleaning Country
+
+The detect_geographies() function from the diverstidy package is used to extract country information for users in the commits dataframe with the inputs location, login, and email. There is some further cleaning done to space out text for multiple countries for a given user, and those detecting the country "Jersey" are replaced with United States, as this is referring to New Jersey. Finally, NAs are replaced with Unknown. 
+
+```{r, eval=FALSE}
+## rename inputs for detect_geographies()
+python_commits_total <- python_commits_total %>%
+  rename(
+    location = author_user_location,
+    login = author_user_login,
+    email = author_email
+  )
+
+## replace NA with character NA 
+python_commits_total$location[is.na(python_commits_total$location)] <- "NA"
+              
+## extract country
+python_commits_total <- python_commits_total %>%
+                detect_geographies(login, 
+                location, "country", email)
+
+### split on "|" and filter for unique countries identified 
+python_commits_total <- python_commits_total %>%
+  mutate(
+    country_fixed = strsplit(as.character(country), split = "\\|") %>%   # Split on "|"
+      map(~unique(.)) %>%                                         # Keep only unique values
+      sapply(paste, collapse = ",")                               # Collapse back into a string
+  )
+
+### replace with NA for countries that had multiple false identified
+python_commits_total$country_fixed <- ifelse(
+  sapply(gsub("[^,]", "", python_commits_total$country_fixed), nchar) > 5,
+  NA,
+  python_commits_total$country_fixed
+)
+
+
+python_commits_total <- python_commits_total %>%
+  mutate(
+    country_fixed = strsplit(country_fixed, split = ",") %>%  # Split on comma
+      map(~ .[!. %in% "NA"]) %>%                             # Remove "NA" values (note the space before "NA")
+      sapply(paste, collapse = ",")                           # Collapse back into a string
+  )
+
+### Replace any instances of new jersey being identified as jersey with united states
+python_commits_total$country_fixed <- gsub("^Jersey, United States$|^United States, Jersey$", "United States", python_commits_total$country_fixed)
+
+
+### replace NA, blank, or charcter NA with Unknown
+
+# Replace NA values, "NA" strings, and blanks with "Unknown"
+python_commits_total$country_fixed <- ifelse(is.na(python_commits_total$country_fixed) | 
+                                             python_commits_total$country_fixed == "NA" | 
+                                             python_commits_total$country_fixed == "", 
+                                             "Unknown", 
+                                             python_commits_total$country_fixed)
+
+```
+
+### Prepare and save dataset for analysis
+
+Now that the commits data has user organization, sector, and country data, it is joined to the dependency and repo level data to generate a final dataframe that will be used for analysis. 
+
+```{r, eval=FALSE}
+### join  repo, commit, package, and dependency data
+python_full <- python_commits_total %>%
+                left_join(python_repos, by = "slug")%>%
+                left_join(python_dependencies, by = "slug")
+
+### create "year_created" variable
+python_full$year_created <- substr(python_full$created_at, 1, 4)
+
+### create Package variable 
+python_final <- python_full %>%
+                    select(Package, description, dependencies, slug, year_created, stargazerCount,
+                           forkCount, issuesCount, pullRequestsCount, login, email, author_name, author_user_pronouns,
+                           author_user_company, location, country_fixed, Institution, 
+                           Sector, total_additions)
+
+```
+
+
