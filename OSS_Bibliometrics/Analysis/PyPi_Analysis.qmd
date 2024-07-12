@@ -1,0 +1,1232 @@
+---
+title: "Python Analysis"
+format: 
+  html:
+    toc: true
+    toc-location: left
+    toc-depth: 5
+    number-sections: true
+    code-fold: true
+    embed-resources: true
+execute: 
+  warning: false
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+# Introduction
+
+In this section, we try to answer our research questions based on the data we have collected for the Python programming language. We attempt to characterize the Python packages by sectors, organizations/institutions, and countries, and also attribute credit towards the most influential actors by aggregating towards these characterization variables. Also, we'd like to construct a package network to see how packages are linked to each other. Finally, we have a number of impact measures (e.g. additions, reverse dependencies...etc) we will use to identify the most important packages in the Python community. A number of impact measures will only be available for the packages we were able to collect GitHub data for (e.g. stars, forks).
+
+```{r, message=FALSE}
+library(tidyverse)
+library(RMySQL)
+library(ggwes)
+library(knitr)
+library(kableExtra)
+library(pander)
+library(ggthemes)
+```
+
+# File List
+
+## Input Files
+
+```{r}
+python_final <- read.csv("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\python_final.csv") %>%
+            select(-X)
+```
+
+
+### What is the distribution of unique GitHub Python contributors by sector?
+
+For the 184,444 unique Python contributors on GitHub, we were able to identify a sector for 18,217 of them. 7,322 coming from academic, 9,482 from business, 596 from government, and 817 from nonprofit
+
+```{r}
+python_users_unique <- python_final %>%
+                          distinct(login, .keep_all = T)
+
+pander(table(python_users_unique$Sector, useNA = "always"))
+```
+
+```{r}
+# Calculate counts by sector (All packages on GitHub)
+python_user_sector_counts <- python_users_unique %>%
+  filter(Sector != "Unknown") %>%
+  count(Sector) %>%
+  mutate(proportion = n / sum(n),
+         proportion_label = paste0(round(proportion * 100, 1), "%")) %>%
+  arrange(desc(proportion)) %>%
+  mutate(Sector = factor(Sector, levels = unique(Sector)))
+
+# Save plot
+python_user_sector_counts_plot <- ggplot(python_user_sector_counts, aes(x = Sector, y = n)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  geom_text(aes(label = proportion_label), vjust = -0.3) +
+  ylab("Count of Developers") +
+  ylim(c(0, 10000))+
+  ggtitle(label = "Number of Python Package Developers on GitHub by Sector")+ 
+  labs(caption = "*Developers without sector information are removed in this figure (90% of 184,444 Python Developers)")+
+  theme_clean()
+
+python_user_sector_counts_plot
+```
+
+#### How do we attribute contribution to sectors (equal)?
+
+We now aim to try to attribute contribution to sectors with a couple of methods. First, we look at equal contribution, where each member of a repository is given an equal fraction of credit regardless of level of contribution. So, if a repository has five members, each member will get .2 credit, and then the fractions are aggregated to the sectors. We will count the fraction to unknown sectors as well, but we will remove it in any graphical displays, as we already know this will be the highest percentage. 
+
+*Note: This is different than looking at unique user distribution, as it will count repeat users if they are members of multiple repositories*
+```{r, message=FALSE}
+# 1. Count the number of unique login per slug.
+login_counts <- python_final %>%
+  group_by(slug) %>%
+  summarise(num_logins = n_distinct(login))
+
+# 2. Compute the contribution fraction for each login.
+python_final <- python_final %>%
+  left_join(login_counts, by = "slug") %>%
+  mutate(contribution_fraction_equal = 1 / num_logins) %>%
+  select(-num_logins)  # Removing the num_logins column as it's no longer needed
+
+# 3. Sum the contribution fraction for each Sector per slug.
+sector_contribution <- python_final %>%
+  group_by(slug, Sector) %>%
+  summarise(total_contribution_fraction = sum(contribution_fraction_equal))
+
+# 4. Aggregate the contribution fraction for each sector across all slugs.
+sector_aggregated <- sector_contribution %>%
+  group_by(Sector) %>%
+  summarise(overall_contribution_fraction = sum(total_contribution_fraction))
+
+
+# Calculate the total overall contribution fraction over all sectors
+total_overall_contribution = sum(sector_aggregated$overall_contribution_fraction)
+
+# Calculate the percentage contribution for each sector
+sector_aggregated = sector_aggregated %>%
+  mutate(percentage_contribution = round((overall_contribution_fraction / total_overall_contribution) * 100, 1))
+
+### Plot percentage contribution
+sector_aggregated$percentage_label <- scales::percent(sector_aggregated$percentage_contribution / 100)
+
+```
+
+Based on equal contribution of each unique login to each unique repository, we would attribute 51% of credit to the academic sector, 40% to the business, 4% to the government, and 5% to the nonprofit. Note that we removed Unknown from the distribution, where we would have to attribute 91% to. So, the percentage distributions listed here are based on the percentage we do know (9%).
+
+```{r}
+### Excluding the unknown percentage in the table
+total_excluding_unknown <- sum(sector_aggregated$overall_contribution_fraction[sector_aggregated$Sector != "Unknown"])
+
+### recalculating what percentages would be without unknown 
+sector_aggregated <- sector_aggregated %>%
+  mutate(percentage_contribution_excl_unknown = ifelse(Sector != "Unknown", 
+                                                       round((overall_contribution_fraction / total_excluding_unknown) * 100, 1), NA_real_))
+
+### making labels
+sector_aggregated$percentage_label_excl_unknown <- scales::percent(sector_aggregated$percentage_contribution_excl_unknown / 100, accuracy = 0.1)
+
+ggplot(sector_aggregated %>% filter(Sector != "Unknown"), aes(x = Sector, y = percentage_contribution_excl_unknown)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  geom_text(aes(label = percentage_label_excl_unknown), vjust = -0.5, size = 4) + 
+  geom_text(aes(label = paste0("(", round(overall_contribution_fraction, 2), ")")), position = position_dodge(width = 0.9), vjust = -2.5)+
+  # Adjust vjust and size as needed
+  labs(title = "Percentage Contribution by Sector (Equal)",
+       x = "Sector",
+       y = "Percentage Contribution") +
+  theme_clean() +
+  labs(caption = "*Excludes the percentage contribution from unknown sector (91.2%)")+
+  ylim(0,100)
+```
+
+#### How do we attribute contribution to sectors (weighted)?
+
+We also can attribute contribution to sectors based on the lines of code written for a unique user of a given repository. The more lines of code added for that repository, the more credit that user will get. So, if a repository has 500 total lines of code, and one user wrote 300 of them, he/she would get .6 of the credit. We again apply the fractional counting method to the sectors after calculating this.
+
+```{r, message = FALSE}
+# Calculate the total code additions for each slug (project/repository identifier)
+# Grouping by the slug, and then summarizing the total additions for each slug.
+slug_totals <- python_final %>%
+  group_by(slug) %>%
+  summarise(total_code_for_slug = sum(total_additions))
+
+# Compute the contribution fraction for each user.
+# This is done by joining the user's total additions with the total code additions for their respective slug,
+# and then computing the user's contribution as a fraction of the slug's total.
+python_final <- python_final %>%
+  left_join(slug_totals, by = "slug") %>%
+  mutate(contribution_fraction_loc = total_additions / total_code_for_slug)
+
+# Compute the total contribution fraction for each combination of slug and sector.
+# This groups the data by slug and sector, and then sums up the contribution fractions.
+sector_addition_contribution <- python_final %>%
+  group_by(slug, Sector) %>%
+  summarise(total_addition_contribution = sum(contribution_fraction_loc))
+
+# Aggregate the contributions at the sector level.
+# This groups by the sector and then computes the overall contribution fraction for each sector.
+sector_aggregated_additions <- sector_addition_contribution %>%
+  group_by(Sector) %>%
+  summarise(overall_addition_contribution = sum(total_addition_contribution, na.rm = TRUE))
+
+# Compute the total overall additions across all sectors.
+total_overall_additions = sum(sector_aggregated_additions$overall_addition_contribution)
+
+# Calculate the percentage of additions for each sector relative to the total overall additions.
+sector_aggregated_additions$percentage_additions = round((sector_aggregated_additions$overall_addition_contribution / total_overall_additions) * 100,1)
+
+# Create a label for the percentage values, turning the decimal fraction into a percentage string (e.g., 0.5 becomes "50%").
+sector_aggregated_additions$percentage_label_additions = scales::percent(sector_aggregated_additions$percentage_additions / 100)
+
+
+```
+
+After doing these calculations, we now see that 52% can be attributed to the academic sector, 39% to the business, 4% to the government, and 5% to the nonprofit. The original amount attributed to Unknown decreased to 90.6%
+
+```{r}
+# Calculate the total code additions while excluding the 'Unknown' sector.
+total_excluding_unknown_add <- sum(sector_aggregated_additions$overall_addition_contribution[sector_aggregated_additions$Sector != "Unknown"])
+
+# Compute the percentage contribution for each sector relative to the total (excluding 'Unknown' sector).
+# If the sector is 'Unknown', set the percentage as NA.
+sector_aggregated_additions <- sector_aggregated_additions %>%
+  mutate(percentage_contribution_excl_unknown = ifelse(Sector != "Unknown", 
+                                                       round((overall_addition_contribution / total_excluding_unknown_add) * 100, 1), NA_real_))
+
+# Create a label for the percentage values that excludes 'Unknown' sector, turning the decimal fraction into a percentage string.
+sector_aggregated_additions$percentage_label_excl_unknown <- scales::percent(sector_aggregated_additions$percentage_contribution_excl_unknown / 100, accuracy = 0.1)
+
+# Visualize data
+ggplot(sector_aggregated_additions %>% filter(Sector != "Unknown"), aes(x = Sector, y = percentage_contribution_excl_unknown)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  geom_text(aes(label = percentage_label_excl_unknown), vjust = -0.5, size = 4) +
+  geom_text(aes(label = paste0("(", round(overall_addition_contribution, 2), ")")), position = position_dodge(width = 0.9), vjust = -2.5)+ # Adjust vjust and size as needed
+  labs(title = "Percentage Contribution by Sector (Weighted)",
+       x = "Sector",
+       y = "Percentage Contribution") +
+  theme_clean() +
+  labs(caption = "*Excludes the percentage contribution from unknown sector (90.6%)")+
+  ylim(0,100)
+```
+
+#### Sectors Over time
+
+```{r}
+# Assuming 'python_final' has the necessary data including 'year_created', 'sector', and 'total_additions'
+
+# Calculate the total code additions for each slug and year
+slug_totals <-python_final %>%
+  group_by(slug, year_created) %>%
+  summarise(total_code_for_slug = sum(total_additions), .groups = 'drop')
+
+# Compute the contribution fraction for each user by year
+python_final <-python_final %>%
+  left_join(slug_totals, by = c("slug", "year_created")) %>%
+  mutate(contribution_fraction_loc = total_additions / total_code_for_slug)
+
+# Compute the total contribution fraction for each combination of slug, sector, and year
+sector_addition_contribution <-python_final %>%
+  group_by(slug, Sector, year_created) %>%
+  summarise(total_addition_contribution = sum(contribution_fraction_loc), .groups = 'drop')
+
+# Aggregate the contributions at the Sector and year level
+sector_aggregated_additions <- sector_addition_contribution %>%
+  group_by(Sector, year_created) %>%
+  summarise(overall_addition_contribution = sum(total_addition_contribution, na.rm = TRUE), .groups = 'drop')
+
+# Compute the total overall additions across all sectors by year
+total_overall_additions_by_year <- sector_aggregated_additions %>%
+  group_by(year_created) %>%
+  summarise(yearly_total = sum(overall_addition_contribution), .groups = 'drop')
+
+# Calculate the percentage of additions for each sector relative to the total overall additions for each year
+sector_aggregated_additions <- sector_aggregated_additions %>%
+  left_join(total_overall_additions_by_year, by = "year_created") %>%
+  mutate(percentage_additions = (overall_addition_contribution / yearly_total) * 100)
+
+# Calculate the total code additions for each year while excluding the 'Unknown' sector
+total_excluding_unknown_by_year <- sector_aggregated_additions %>%
+  filter(Sector != "Unknown") %>%
+  group_by(year_created) %>%
+  summarise(yearly_total_excl_unknown = sum(overall_addition_contribution), .groups = 'drop')
+
+# Compute the percentage contribution for each sector by year relative to the year's total excluding 'Unknown'
+sector_aggregated_additions <- sector_aggregated_additions %>%
+  left_join(total_excluding_unknown_by_year, by = "year_created") %>%
+  mutate(percentage_contribution_excl_unknown = ifelse(Sector != "Unknown" & !is.na(yearly_total_excl_unknown), 
+                                                       (overall_addition_contribution / yearly_total_excl_unknown) * 100, 
+                                                       NA_real_))
+
+# Round the percentages and create labels
+sector_aggregated_additions$percentage_contribution_excl_unknown <- round(sector_aggregated_additions$percentage_contribution_excl_unknown, 1)
+sector_aggregated_additions$percentage_label_excl_unknown <- ifelse(is.na(sector_aggregated_additions$percentage_contribution_excl_unknown),
+                                                                    NA_character_,
+                                                                    percent(sector_aggregated_additions$percentage_contribution_excl_unknown / 100))
+
+# Optional: Print the head of the final dataframe to check the results
+print(head(sector_aggregated_additions))
+sum(sector_aggregated_additions$overall_addition_contribution)
+
+# Assuming sector_aggregated_additions contains the necessary processed data
+# Filter out the 'Unknown' Sector for plotting
+plot_data <- sector_aggregated_additions %>%
+  filter(Sector != "Unknown",
+         year_created != "NA" & year_created != "2023")
+
+```
+
+
+```{r}
+# Stacked Bar Chart for Yearly Totals
+Py_Sectors_time <- ggplot(plot_data, aes(x = year_created, y = overall_addition_contribution, fill = Sector)) +
+  geom_bar(stat = "identity") +
+  scale_fill_westat(option = "BLUES", drop = FALSE)+
+   scale_x_continuous(breaks = seq(min(plot_data$year_created), max(plot_data$year_created))) +  # Ensure all years are shown
+  labs(x = "", y = "Fractional Count of Packages", title = "Fractional Count of Packages for Sector by Year") + # Fractional Count of Packages for Sector by Year, y-axis: Fractional Count of Packages
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom")
+
+Py_Sectors_time
+
+ggsave(filename = "\\\\westat.com\\dfs\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\New Graphs\\Py_Sectors_time.png", plot = Py_Sectors_time, width = 8, height = 6, dpi = 300)
+```
+
+### What is the distribution of GitHub Python contributors by country?
+
+Based on the unique R GitHub users, the United States is the most frequent country found followed by Germany and the United Kingdom. Out of 184,444 unique users, there were 79,541 that we were unable to find a country for. 
+
+```{r, message=FALSE}
+### sum of Unknowns for country
+
+sum(python_users_unique$country_fixed == "Unknown")
+
+### sorting to the top 10 most common countries for distinct GitHub users
+top10_Countries_GitHub_users_unique <- python_users_unique %>%
+  filter(country_fixed != "Unknown")
+
+top10_Countries_GitHub_users_unique <-  sort(table(top10_Countries_GitHub_users_unique$country_fixed), decreasing = T)
+
+top10_Countries_GitHub_users_unique  <- as.data.frame(head(top10_Countries_GitHub_users_unique , 10))
+
+colnames(top10_Countries_GitHub_users_unique ) <- c("country_fixed", "Freq")
+
+ ### Graph output of top 10 countries for unique maintainers
+ ggplot(top10_Countries_GitHub_users_unique , aes(x = reorder(country_fixed, Freq), y = Freq))+
+   geom_bar(stat = "identity", fill = "orange") +
+    coord_flip() +
+    scale_y_continuous(expand = c(0,0)) +
+    labs(x = "", y = "Number of GitHub Users",
+         title = "Top 10 Countries for Python Users on GitHub" ) +
+    ylim(c(0, 30000))+
+  theme_clean()+
+   theme(
+  plot.title = element_text(size = 13))+
+   labs(caption = "*Excludes count from unknown countries (79,541)")
+   
+```
+
+```{r}
+### Table output of top 10 Institutions for packages
+top10_Countries_GitHub_users_unique %>%
+  kbl(caption = "Most Frequent Countries for Python Developers on GitHub", escape = F)%>%
+  kable_classic()%>%
+  kable_styling(font_size = 12, full_width = T)%>%
+ row_spec(0, bold = T, background = westat_blue(), color = "white")%>%
+  column_spec(1:2, border_right = T)%>%
+  scroll_box()
+```
+
+#### How do we attribute contribution to countries (equal)?
+
+For users that have multiple countries, we split the lines of code evenly between them in this code.
+
+```{r}
+# Function to handle the splitting and division for multiple countries
+process_multiple_countries <- function(df) {
+  num_countries <- length(str_split(df$country_fixed, ",\\s*")[[1]])
+  df %>%
+    separate_rows(country_fixed, sep = ",\\s*") %>%
+    mutate(
+      total_additions = total_additions / num_countries,
+      contribution_fraction_equal = contribution_fraction_equal / num_countries,
+      contribution_fraction_loc = contribution_fraction_loc / num_countries
+    )
+}
+
+
+# Process rows with multiple countries
+multi_country_rows <- python_final %>%
+  filter(str_detect(country_fixed, ",")) %>%
+  group_by(login) %>%
+  do(process_multiple_countries(.))
+
+# Exclude multi-country rows from the original df and bind the processed rows
+python_final <- python_final %>%
+  filter(!str_detect(country_fixed, ",")) %>%
+  bind_rows(multi_country_rows)
+```
+
+
+```{r, message=FALSE}
+# Sum the contribution fraction for each sector per slug.
+country_contribution <- python_final %>%
+  group_by(slug, country_fixed) %>%
+  summarise(total_contribution_fraction = sum(contribution_fraction_equal))
+
+# Aggregate the contribution fraction for each country across all slugs
+country_aggregated <- country_contribution %>%
+  group_by(country_fixed) %>%
+  summarise(overall_contribution_fraction = sum(total_contribution_fraction))
+
+# Calculate the total overall contribution fraction over all countries
+total_overall_contribution = sum(country_aggregated$overall_contribution_fraction)
+
+# Calculate the percentage contribution for each country
+country_aggregated = country_aggregated %>%
+  mutate(percentage_contribution = round((overall_contribution_fraction / total_overall_contribution) * 100, 1))
+
+### Plot percentage contribution
+country_aggregated$percentage_label <- scales::percent(country_aggregated$percentage_contribution / 100)
+
+```
+
+If we give equal contributions to countries, then the United states would get 25% of the credit followed by Germany with 8.6% credit. This excludes the contribution counted towards unknown (45.9%), so these percentages are based on the percentage that we know (54.1%).
+
+```{r}
+total_excluding_unknown <- sum(country_aggregated$overall_contribution_fraction[country_aggregated$country_fixed != "Unknown"])
+
+country_aggregated <- country_aggregated %>%
+  mutate(percentage_contribution_excl_unknown = ifelse(country_fixed != "Unknown", 
+                                                       round((overall_contribution_fraction / total_excluding_unknown) * 100, 1), NA_real_))
+
+
+country_aggregated$percentage_label_excl_unknown <- scales::percent(country_aggregated$percentage_contribution_excl_unknown / 100, accuracy = 0.1)
+
+
+top_10_countries <- country_aggregated %>%
+  arrange(desc(percentage_contribution_excl_unknown)) %>%
+  head(10)
+
+ggplot(top_10_countries, aes(x = reorder(country_fixed, percentage_contribution_excl_unknown),  y = percentage_contribution_excl_unknown)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  geom_text(aes(label = percentage_label_excl_unknown), vjust = .5, size = 4, hjust = -.25) +
+  geom_text(aes(label = paste0("(", round(overall_contribution_fraction, 2), ")")), position = position_dodge(width = 0.9), vjust = .25, hjust = -1)+# Adjust vjust and size as needed
+  labs(title = "Percentage Contribution by Country (Equal - Top 10 Countries)",
+       x = "Country",
+       y = "Percentage Contribution") +
+  theme_clean() +
+  ylim(0,100)+
+  coord_flip()+
+  theme(plot.title = element_text(size = 10))+
+  labs(caption = "*Excludes the percentage contribution from unknown countries (45.9%)")
+```
+
+#### How do we attribute contribution to countries (weighted)?
+
+```{r, message=FALSE}
+country_addition_contribution <- python_final %>%
+  group_by(slug, country_fixed) %>%
+  summarise(total_addition_contribution = sum(contribution_fraction_loc))
+
+country_aggregated_additions <- country_addition_contribution %>%
+  group_by(country_fixed) %>%
+  summarise(overall_addition_contribution = sum(total_addition_contribution, na.rm = TRUE))
+
+total_overall_additions = sum(country_aggregated_additions$overall_addition_contribution)
+
+country_aggregated_additions$percentage_additions = round((country_aggregated_additions$overall_addition_contribution / total_overall_additions) * 100,1)
+
+country_aggregated_additions$percentage_label_additions = scales::percent(country_aggregated_additions$percentage_additions / 100)
+```
+
+Based on additions, United states still is at the top, but it increases slightly to 26%. The top 10 changes slightly, with Japan jumping in and Russia jumping out.
+
+```{r, fig.height= 5, fig.width= 5}
+total_excluding_unknown <- sum(country_aggregated_additions$overall_addition_contribution[country_aggregated_additions$country_fixed != "Unknown"])
+
+country_aggregated_additions <- country_aggregated_additions %>%
+  mutate(percentage_contribution_excl_unknown = ifelse(country_fixed != "Unknown", 
+                                                       round((overall_addition_contribution / total_excluding_unknown) * 100, 1), NA_real_))
+
+
+country_aggregated_additions$percentage_label_excl_unknown <- scales::percent(country_aggregated_additions$percentage_contribution_excl_unknown / 100, accuracy = 0.1)
+
+
+top_10_countries_additions <- country_aggregated_additions %>%
+  arrange(desc(percentage_contribution_excl_unknown)) %>%
+  head(10)
+
+ Py_country_weighted <- ggplot(top_10_countries_additions, aes(x = reorder(country_fixed, percentage_contribution_excl_unknown),  y = percentage_contribution_excl_unknown)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  geom_text(aes(label = percentage_label_excl_unknown), vjust = .5, size = 6, hjust = -.12) + 
+  geom_text(aes(label = paste0("(", round(overall_addition_contribution, 2), ")")), position = position_dodge(width = 0.9), vjust = .5, hjust = -1.1, size = 5)+# Adjust vjust and size as needed
+  theme_clean() +
+  labs(x= "", y= "Percentage Contribution")+
+  ylim(0,100)+
+  coord_flip()+
+  theme(axis.text = element_text(size = 14),
+         axis.title = element_text(size = 12))
+
+
+
+#ggsave("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Py_country_weighted.png", plot = Py, width = 5, height = 5, dpi = 300)
+```
+
+#### Countries over time
+
+```{r}
+# Step 1: Sum the contribution fraction for each country per slug, per year
+country_contribution_by_year <- python_final %>%
+  group_by(slug, country_fixed, year_created) %>%
+  summarise(total_contribution_fraction = sum(contribution_fraction_loc, na.rm =  T), .groups = 'drop')
+
+# Step 2: Aggregate the contribution fraction for each country by year
+country_aggregated_by_year <- country_contribution_by_year %>%
+  group_by(country_fixed, year_created) %>%
+  summarise(overall_contribution_fraction = sum(total_contribution_fraction), .groups = 'drop')
+
+# Step 3: Exclude 'Unknown' and determine the top ten countries for each year
+country_aggregated_by_year_excl_unknown <- country_aggregated_by_year %>%
+  filter(country_fixed != "Unknown")
+
+# Step 4: Calculate the total overall contribution by year, excluding 'Unknown'
+total_overall_contribution_by_year_excl_unknown <- country_aggregated_by_year_excl_unknown %>%
+  group_by(year_created) %>%
+  summarise(yearly_total_excl_unknown = sum(overall_contribution_fraction), .groups = 'drop')
+
+# Now compute the percentage of contribution for each of the top countries, excluding 'Unknown'
+country_aggregated_by_year_excl_unknown <- country_aggregated_by_year_excl_unknown %>%
+  left_join(total_overall_contribution_by_year_excl_unknown, by = "year_created") %>%
+  mutate(percentage_contribution_excl_unknown = (overall_contribution_fraction / yearly_total_excl_unknown) * 100) %>%
+  arrange(year_created, desc(percentage_contribution_excl_unknown))
+
+# Step 5: Get the top ten countries by year, excluding 'Unknown'
+top_countries_by_year_excl_unknown <- country_aggregated_by_year_excl_unknown %>%
+  group_by(year_created) %>%
+  top_n(10, wt = percentage_contribution_excl_unknown) %>%
+  ungroup()
+
+# Filter out the 'Unknown' sector for plotting
+plot_data2 <- top_countries_by_year_excl_unknown %>%
+  filter(year_created != "NA" & year_created != "2023")
+
+
+sum(country_aggregated_by_year$overall_contribution_fraction)
+
+
+plot_data3 <- top_countries_by_year_excl_unknown %>%
+  filter(year_created != "NA" & year_created != "2023",
+         country_fixed %in% c("United States", "Germany", "United Kingdom", "France", "China", "Canada", "India", "Netherlands", "Russia", "Brazil"))
+```
+
+```{r}
+my_colors <- c("#6B8E23", "#8FBC8F", "#2E8B57", "#4682B4", "#87CEEB",
+               "#4169E1", "#B0C4DE", "#D2691E", "#CD853F", "#F4A460")
+
+
+# Stacked Bar Chart for Yearly Totals
+Py_Country_time <- ggplot(plot_data3, aes(x = year_created, y = overall_contribution_fraction, fill = country_fixed)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = my_colors) +
+  scale_x_continuous(breaks = seq(min(plot_data$year_created), max(plot_data$year_created), by = 1)) +
+  labs(x = "", y = "Fractional Count of Packages", title = "Top Countries by Fractional Count of Packages", fill = "Country") + # Top Countries by Fractional Count of Packages, y-axis: Fractional Count of Packages
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom")
+
+Py_Country_time
+
+ggsave(filename = "\\\\westat.com\\dfs\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\New Graphs\\Py_Country_time.png", plot = Py_Country_time, width = 8, height = 6, dpi = 300)
+```
+
+### What is the distribution of unique GitHub Python contributors by organization?
+
+We also have the organization/institution variable for some users. It works with the sector variable, so if we were not able to identify a sector, we also were not able to identify an organization.
+
+
+If we look at the top 10 most frequent organizations for unique R developers on Github, Google has the most with 1,994 followed by NetEase with 878. Only one in the top 10 is from a sector other than business (University of California-Berkeley - Academic)
+
+```{r, message=FALSE}
+### filter out Unknown
+top10_Institutions_GitHub_users_unique <- python_users_unique %>%
+                                              filter(Institution != "Unknown")
+
+### sorting to the top 10 most common institutions for distinct GitHub users
+top10_Institutions_GitHub_users_unique <- sort(table(top10_Institutions_GitHub_users_unique$Institution), decreasing = T)
+top10_Institutions_GitHub_users_unique <- as.data.frame(head(top10_Institutions_GitHub_users_unique, 10))
+
+colnames(top10_Institutions_GitHub_users_unique) <- c("Institution", "Freq")
+
+### joining to institution unique dataframe to get sector variable
+top10_Institutions_GitHub_users_unique <- python_users_unique %>% 
+  right_join(top10_Institutions_GitHub_users_unique, by = "Institution")%>%
+  distinct(Institution, .keep_all = T)%>%
+  select(Institution, Sector, Freq)%>%
+  arrange(desc(Freq))
+
+ ### Graph output of top 10 institutions for unique maintainers
+ ggplot(top10_Institutions_GitHub_users_unique, aes(x = reorder(Institution, Freq), y = Freq, fill = Sector))+
+   geom_bar(stat = "identity") +
+    coord_flip() +
+    scale_y_continuous(expand = c(0,0)) +
+    labs(x = "", y = "Number of GitHub Users",
+         title = "Top 10 Organizations for Unique Python Users on GitHub" ) +
+    ylim(c(0, 2000))+
+  scale_fill_westat(option = "BLUES", drop = FALSE)+
+  theme_clean()+
+   theme(
+  plot.title = element_text(size = 13))+
+   labs(caption = "*Those without org info are removed in this figure (90% of 184,444 Python Developers)")
+```
+
+```{r}
+### Table output of top 10 Institutions for packages
+top10_Institutions_GitHub_users_unique %>%
+  kbl(caption = "Most Frequent Institutions for Python Developers on GitHub", escape = F)%>%
+  kable_classic()%>%
+  kable_styling(font_size = 12, full_width = T)%>%
+ row_spec(0, bold = T, background = westat_blue(), color = "white")%>%
+  column_spec(1:2, border_right = T)%>%
+  scroll_box()
+
+```
+
+#### How do we attribute contribution to organization (equal)?
+
+```{r, message=FALSE}
+# Sum the contribution fraction for each organization per slug.
+org_contribution <- python_final %>%
+  group_by(slug, Institution) %>%
+  summarise(total_contribution_fraction = sum(contribution_fraction_equal))
+
+# Aggregate the contribution fraction for Institution across all slugs
+org_aggregated <- org_contribution %>%
+  group_by(Institution) %>%
+  summarise(overall_contribution_fraction = sum(total_contribution_fraction))
+
+# Calculate the total overall contribution fraction over all Institutions
+total_overall_contribution = sum(org_aggregated$overall_contribution_fraction)
+
+# Calculate the percentage contribution for each Institution
+org_aggregated = org_aggregated %>%
+  mutate(percentage_contribution = round((overall_contribution_fraction / total_overall_contribution) * 100, 1))
+
+### Plot percentage contribution
+org_aggregated$percentage_label <- scales::percent(org_aggregated$percentage_contribution / 100)
+```
+
+Again, the equal percentage contribution to Unknown is 91.2% just like we saw in the sector contribution section. Of the percentage we do know, NetEase leads with 7.2% followed by Google with 5.6%
+
+```{r}
+total_excluding_unknown <- sum(org_aggregated$overall_contribution_fraction[org_aggregated$Institution != "Unknown"])
+
+org_aggregated <- org_aggregated %>%
+  mutate(percentage_contribution_excl_unknown = ifelse(Institution != "Unknown", 
+                                                       round((overall_contribution_fraction / total_excluding_unknown) * 100, 1), NA_real_))
+
+
+org_aggregated$percentage_label_excl_unknown <- scales::percent(org_aggregated$percentage_contribution_excl_unknown / 100, accuracy = 0.1)
+
+
+top_10_orgs <- org_aggregated %>%
+  arrange(desc(percentage_contribution_excl_unknown)) %>%
+  head(10)
+
+ggplot(top_10_orgs, aes(x = reorder(Institution, percentage_contribution_excl_unknown),  y = percentage_contribution_excl_unknown)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  geom_text(aes(label = percentage_label_excl_unknown), vjust = .5, size = 4, hjust = -.25) + 
+  geom_text(aes(label = paste0("(", round(overall_contribution_fraction, 2), ")")), position = position_dodge(width = 0.9), vjust = .25, hjust = -1)+# Adjust vjust and size as needed
+  labs(title = "Percentage Contribution by Institution (Equal - Top 10 Organizations)",
+       x = "Institution",
+       y = "Percentage Contribution") +
+  theme_clean() +
+  ylim(0,100)+
+  coord_flip()+
+  theme(plot.title = element_text(size = 7))+
+  labs(caption = "*Excludes the percentage contribution from unknown (91.2%)")
+```
+
+#### How do we attribute contribution to organizations (weighted)?
+
+```{r, message=FALSE}
+org_addition_contribution <- python_final %>%
+  group_by(slug, Institution) %>%
+  summarise(total_addition_contribution = sum(contribution_fraction_loc))
+
+org_aggregated_additions <- org_addition_contribution %>%
+  group_by(Institution) %>%
+  summarise(overall_addition_contribution = sum(total_addition_contribution, na.rm = TRUE))
+
+total_overall_additions = sum(org_aggregated_additions$overall_addition_contribution)
+
+org_aggregated_additions$percentage_additions = round((org_aggregated_additions$overall_addition_contribution / total_overall_additions) * 100,1)
+
+org_aggregated_additions$percentage_label_additions = scales::percent(org_aggregated_additions$percentage_additions / 100) 
+```
+
+Based on additions, the percentage contribution towards unknown is 90.6% just as we saw for sector, which is what we expect because the two variables coincide with one another. The percentage coming from NetEase decreases to 5.2% (now number two), and Google jumps to first with 5.9%
+
+```{r}
+total_excluding_unknown <- sum(org_aggregated_additions$overall_addition_contribution[org_aggregated_additions$Institution != "Unknown"])
+
+org_aggregated_additions <- org_aggregated_additions %>%
+  mutate(percentage_contribution_excl_unknown = ifelse(Institution != "Unknown", 
+                                                       round((overall_addition_contribution / total_excluding_unknown) * 100, 1), NA_real_))
+
+
+org_aggregated_additions$percentage_label_excl_unknown <- scales::percent(org_aggregated_additions$percentage_contribution_excl_unknown / 100, accuracy = 0.1)
+
+
+top_10_orgs_additions <- org_aggregated_additions %>%
+  arrange(desc(percentage_contribution_excl_unknown)) %>%
+  head(10)
+
+ggplot(top_10_orgs_additions, aes(x = reorder(Institution, percentage_contribution_excl_unknown),  y = percentage_contribution_excl_unknown)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  geom_text(aes(label = percentage_label_excl_unknown), vjust = .5, size = 4, hjust = -.25) + 
+  geom_text(aes(label = paste0("(", round(overall_addition_contribution, 2), ")")), position = position_dodge(width = 0.9), vjust = .25, hjust = -1)+# Adjust vjust and size as needed
+  labs(title = "Percentage Contribution by Institution (Weighted - Top 10 Organizations)",
+       x = "Institution",
+       y = "Percentage Contribution") +
+  theme_clean() +
+  ylim(0,100)+
+  coord_flip()+
+  theme(plot.title = element_text(size = 7))+
+  labs(caption = "*Excludes the percentage contribution from unknown (90.6%)")
+```
+
+## Dependencies Per Package
+
+```{r}
+python_final_distinct <- python_final %>%
+                            distinct(Package, .keep_all = T)
+
+library(pbapply)
+library(purrr)
+library(dplyr)
+library(stringr)
+
+Count_Data <- pblapply(seq_len(nrow(python_final_distinct)), function(.x) {
+  python_final_distinct[.x, ] %>%
+    select(Package, dependencies) %>%
+    map_df(function(.y) ifelse(is.na(.y) | .y == "", 0, length(str_split(.y, ",")[[1]]))) %>%
+    mutate(Package = python_final_distinct$Package[.x])
+}, cl = 1) %>%
+  bind_rows() %>%
+  select(Package, dependencies)
+```
+```{r}
+colnames(Count_Data) <- c("Package", "Depends_Count")
+
+Count_Data <- Count_Data %>%
+                select(Package, Depends_Count)
+
+### Creating categories for dependency counts
+
+Count_Data <- Count_Data %>%
+          mutate(Depends_Cat = case_when(Depends_Count == 0 ~ "0",
+                                         Depends_Count  == 1 | Depends_Count == 2 ~ "1-2",
+                                         Depends_Count  > 2 & Depends_Count < 7 ~ "3-6",
+                                         Depends_Count  > 6 & Depends_Count < 16 ~ "7-15",
+                                         Depends_Count > 15 ~ "16+"))
+## converting to factor
+Count_Data$Depends_Cat <- as.factor(Count_Data$Depends_Cat)
+
+# Getting counts per category 
+table(Count_Data$Depends_Cat)
+```
+
+
+```{r}
+### Creating inputs for tree map plot
+
+Dependencies <- c("0: 51%", "1-2: 19%", "3-6: 17%", "7-15: 9%", "16+: 4%")
+
+Value <- c(26, 52, 10, 8, 4)
+
+Label <- c("0 Dep: 51%", "1-2 Dep: 19%", "3-6 Dep: 17%", "7-15 Dep: 9%", "16+ Dep: 4%")
+
+Depends_Tree <- cbind(Dependencies, Value, Label)
+
+Depends_Tree <- as.data.frameR_Depends_Tree)
+
+Depends_Tree$Value <- as.numericR_Depends_Tree$Value)
+
+### Generating tree map plot
+
+ggplot(Depends_Tree, aes(area = Value, fill = Dependencies, label = Label)) +
+  geom_treemap() +
+  geom_treemap_text(colour = "black",
+                    place = "centre",
+                    size = 15)+
+  ggtitle("Number of Dependencies Per Package (Python)")+
+  scale_fill_westat(option = "BLUES", breaks = c("0: 51%", "1-2: 19%", "3-6: 17%", "7-15: 9%", "16+: 4%"))+
+  theme_tufte()+
+  theme(legend.position = "right")
+```
+
+```{r}
+Rev_Dep <- c("0: 86%", "1-3: 11%", "4-10: 2%", "11+: 1%")
+
+Value <- c(76, 11, 3, 2)
+
+Label <- c("0: 86%", "1-3: 11%", "4-10: 2%", "11+: 1%")
+
+R_Depends_Tree <- cbind(Rev_Dep, Value, Label)
+
+R_Depends_Tree <- as.data.frame(R_Depends_Tree)
+
+R_Depends_Tree$Value <- as.numeric(R_Depends_Tree$Value)
+
+### Generating tree map plot
+
+ggplot(R_Depends_Tree, aes(area = Value, fill = Rev_Dep, label = Label)) +
+  geom_treemap() +
+  geom_treemap_text(colour = "black",
+                    place = "centre",
+                    size = 15)+
+  ggtitle("Number of Reverse Dependencies Per Package (Python)")+
+  scale_fill_westat(option = "BLUES", breaks = c("0: 86%", "1-3: 11%", "4-10: 2%", "11+: 1%"))+
+  theme_tufte()+
+  theme(legend.position = "right")
+```
+
+
+
+## Network Analysis
+
+-   What are the overall structural features of the OSS networks? How do they differ across fields, sectors, institutions, and countries? Units of analysis (OSS actors): projects, categories, developers, institutions, sectors, countries
+
+-   What are the different communities that can be identified using structural features of the networks? Do they correspond to similarities in languages, methods, location, culture?
+
+### Countries 
+
+```{r, warning=FALSE}
+### select dependency information for slugs and packages
+py_github_rdi <- python_final %>%
+                    distinct(Package, .keep_all = T) %>%
+                      select(Package, slug, dependencies)
+
+### rename columns
+colnames(py_github_rdi) <- c("Citing_Package", "slug", "Dependencies")
+
+
+### Package citation column will be the unlisted dependencies column
+py_github_rdi$Package_Citation <- py_github_rdi$Dependencies
+
+
+### join commits information for the citing packages
+py_github_RDI <- py_github_rdi %>%
+                      inner_join(python_final, by = "slug")%>%
+                        select(Citing_Package, slug, Dependencies, login,
+                             country_fixed, total_additions, total_code_for_slug,
+                             contribution_fraction_loc, Package_Citation) %>%
+                       # Remove rows with NA in Depends
+                        filter(Package_Citation != "")
+
+### rename columns on the basis of the citing package
+colnames(py_github_RDI) <- c("Citing_Package", "Citing_Slug", "Dependencies", "Citing_Login",  "Citing_Country",
+                                "Citing_Additions", "Citing_Total_Slug_Additions", "Citing_Package_Fraction" , "Package_Citation")
+
+
+### unlist the dependencies for joining
+py_github_RDI_network <-  py_github_RDI %>%
+  separate_rows(Package_Citation, sep = ",\\s*") %>%
+  filter(Package_Citation != "")
+
+
+#### prepare commits information for cited packages
+python_final_rdi <- python_final %>%
+  mutate(Package_Citation = str_split(slug, "/", simplify = TRUE)[, 2])%>%
+  select(login, country_fixed, total_additions, total_code_for_slug, contribution_fraction_loc, Package_Citation)
+  
+  colnames(python_final_rdi) <- c( "Cited_Login", "Cited_Country", 
+                                   "Cited_Additions", "Cited_Total_Slug_Additions", "Cited_Package_Fraction", "Package_Citation")
+  
+
+# Function to split a dataframe into chunks based on unique values of a specified column
+split_data_into_chunks <- function(data, column_name) {
+  # Ensure that the column exists in the dataframe
+  if (!column_name %in% names(data)) {
+    stop("Column not found in the dataframe.")
+  }
+  
+  # Split the dataframe into a list of dataframes, each for a unique value of the specified column
+  chunks <- split(data, data[[column_name]])
+  
+  return(chunks)
+}
+
+# Assuming 'df' and 'python_final_rdi' are already defined dataframes
+# Replace 'df' with the actual dataframe variable name
+chunks <- split_data_into_chunks(py_github_RDI_network, "Citing_Package")
+  
+# Function to process each chunk
+process_chunk <- function(chunk) {
+  chunk %>%
+    inner_join(python_final_rdi, by = "Package_Citation") %>%
+    mutate(Dependency_Fraction = Citing_Package_Fraction * Cited_Package_Fraction) %>%
+    group_by(Cited_Country, Citing_Country) %>%
+    summarize(Total_Dependency_Fraction = round(sum(Dependency_Fraction, na.rm = TRUE), 4), .groups = "drop") # Ensure the result is ungrouped for later binding
+}
+
+# Process each chunk and store the results
+results <- lapply(chunks, process_chunk)
+
+# Combine results into a single dataframe
+dependency_summary  <- bind_rows(results) %>%
+  group_by(Cited_Country, Citing_Country) %>%
+  summarize(Total_Dependency_Fraction = sum(Total_Dependency_Fraction, na.rm = TRUE)) %>%
+  ungroup() 
+```
+
+```{r}
+dependency_summary <- read.csv("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\PyPi_EdgeList.csv")
+```
+
+
+```{r}
+# Group by Cited Country and Citing Country, and sum Dependency_Fraction
+
+### the number of citations made from one country to another is simply the sum of the fractioned scores associated with each pair, with the sum across all possible pairs adding up to the total number of citations made at the world level.
+
+sum(dependency_summary$Total_Dependency_Fraction)
+
+# Group by Cited Country and sum Total_Dependency_Fraction - total number of citations attributed to each country
+citations_by_country <- dependency_summary %>%
+  group_by(Cited_Country) %>%
+  summarize(Fraction_of_Citations = sum(Total_Dependency_Fraction, na.rm = TRUE))
+
+
+sum(citations_by_country$Fraction_of_Citations)
+
+citations_by_country$Denominator_RDI <- round(citations_by_country$Fraction_of_Citations / sum(citations_by_country$Fraction_of_Citations),4)
+
+# Group by citing country and sum Total_Dependency_Fraction - total number of citations made by each country
+citings_by_country <- dependency_summary %>%
+  group_by(Citing_Country) %>%
+  summarize(Fraction_of_Citings = round(sum(Total_Dependency_Fraction, na.rm = TRUE), 4))
+
+
+sum(citings_by_country$Fraction_of_Citings)
+
+
+# join citings by country with dependency_summary
+
+citings_dependency_summary <- citings_by_country %>%
+                                full_join(dependency_summary, by = "Citing_Country")
+
+citings_dependency_summary$Numerator_RDI <- round(citings_dependency_summary$Total_Dependency_Fraction / citings_dependency_summary$Fraction_of_Citings,4)
+
+## join denominator_RDI
+
+citations_citings_dependency_summary <- citations_by_country %>%
+                                full_join(citings_dependency_summary, by = "Cited_Country") %>%
+                                select(Citing_Country, Cited_Country, Numerator_RDI, Denominator_RDI)
+
+citations_citings_dependency_summary$RDI <- citations_citings_dependency_summary$Numerator_RDI / citations_citings_dependency_summary$Denominator_RDI
+```
+
+
+```{r}
+dependency_summary %>%
+  arrange(desc(Total_Dependency_Fraction))%>%
+   slice_max(order_by = Total_Dependency_Fraction, n = 50) %>%
+  kbl(caption = "Country Pair Dependency Weights", escape = F)%>%
+  kable_classic()%>%
+  kable_styling(font_size = 12, full_width = T)%>%
+ row_spec(0, bold = T, background = westat_blue(), color = "white")%>%
+  column_spec(1:2, border_right = T)%>%
+  scroll_box(width = "100%", height = "500px")
+```
+
+### Sectors
+
+```{r, warning=FALSE}
+### select dependency information for slugs and packages
+py_github_rdi <- python_final %>%
+                    distinct(Package, .keep_all = T) %>%
+                      select(Package, slug, dependencies)
+
+### rename columns
+colnames(py_github_rdi) <- c("Citing_Package", "slug", "Dependencies")
+
+
+### Package citation column will be the unlisted dependencies column
+py_github_rdi$Package_Citation <- py_github_rdi$Dependencies
+
+
+### join commits information for the citing packages
+py_github_RDI <- py_github_rdi %>%
+                      inner_join(python_final, by = "slug")%>%
+                        select(Citing_Package, slug, Dependencies, login,
+                             Sector, total_additions, total_code_for_slug,
+                             contribution_fraction_loc, Package_Citation) %>%
+                       # Remove rows with NA in Depends
+                        filter(Package_Citation != "")
+
+### rename columns on the basis of the citing package
+colnames(py_github_RDI) <- c("Citing_Package", "Citing_Slug", "Dependencies", "Citing_Login",  "Citing_Sector",
+                                "Citing_Additions", "Citing_Total_Slug_Additions", "Citing_Package_Fraction" , "Package_Citation")
+
+
+### unlist the dependencies for joining
+py_github_RDI_network <-  py_github_RDI %>%
+  separate_rows(Package_Citation, sep = ",\\s*") %>%
+  filter(Package_Citation != "")
+
+
+#### prepare commits information for cited packages
+python_final_rdi <- python_final %>%
+  mutate(Package_Citation = str_split(slug, "/", simplify = TRUE)[, 2])%>%
+  select(login, Sector, total_additions, total_code_for_slug, contribution_fraction_loc, Package_Citation)
+  
+  colnames(python_final_rdi) <- c( "Cited_Login", "Cited_Sector", 
+                                   "Cited_Additions", "Cited_Total_Slug_Additions", "Cited_Package_Fraction", "Package_Citation")
+  
+
+# Function to split a dataframe into chunks based on unique values of a specified column
+split_data_into_chunks <- function(data, column_name) {
+  # Ensure that the column exists in the dataframe
+  if (!column_name %in% names(data)) {
+    stop("Column not found in the dataframe.")
+  }
+  
+  # Split the dataframe into a list of dataframes, each for a unique value of the specified column
+  chunks <- split(data, data[[column_name]])
+  
+  return(chunks)
+}
+
+# Assuming 'df' and 'python_final_rdi' are already defined dataframes
+# Replace 'df' with the actual dataframe variable name
+chunks <- split_data_into_chunks(py_github_RDI_network, "Citing_Package")
+  
+# Function to process each chunk
+process_chunk <- function(chunk) {
+  chunk %>%
+    inner_join(python_final_rdi, by = "Package_Citation") %>%
+    mutate(Dependency_Fraction = Citing_Package_Fraction * Cited_Package_Fraction) %>%
+    group_by(Cited_Sector, Citing_Sector) %>%
+    summarize(Total_Dependency_Fraction = round(sum(Dependency_Fraction, na.rm = TRUE), 4), .groups = "drop") # Ensure the result is ungrouped for later binding
+}
+
+# Process each chunk and store the results
+results <- lapply(chunks, process_chunk)
+
+# Combine results into a single dataframe
+dependency_summary  <- bind_rows(results) %>%
+  group_by(Cited_Sector, Citing_Sector) %>%
+  summarize(Total_Dependency_Fraction = sum(Total_Dependency_Fraction, na.rm = TRUE)) %>%
+  ungroup() 
+```
+
+```{r}
+ write.csv(dependency_summary,"\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\PyPi_Sector_EdgeList.csv", row.names = F)
+```
+
+### Orgs
+
+```{r, warning=FALSE}
+### select dependency information for slugs and packages
+py_github_rdi <- python_final %>%
+                    distinct(Package, .keep_all = T) %>%
+                      select(Package, slug, dependencies)
+
+### rename columns
+colnames(py_github_rdi) <- c("Citing_Package", "slug", "Dependencies")
+
+
+### Package citation column will be the unlisted dependencies column
+py_github_rdi$Package_Citation <- py_github_rdi$Dependencies
+
+
+### join commits information for the citing packages
+py_github_RDI <- py_github_rdi %>%
+                      inner_join(python_final, by = "slug")%>%
+                        select(Citing_Package, slug, Dependencies, login,
+                             Institution, total_additions, total_code_for_slug,
+                             contribution_fraction_loc, Package_Citation) %>%
+                       # Remove rows with NA in Depends
+                        filter(Package_Citation != "")
+
+### rename columns on the basis of the citing package
+colnames(py_github_RDI) <- c("Citing_Package", "Citing_Slug", "Dependencies", "Citing_Login",  "Citing_Org",
+                                "Citing_Additions", "Citing_Total_Slug_Additions", "Citing_Package_Fraction" , "Package_Citation")
+
+
+### unlist the dependencies for joining
+py_github_RDI_network <-  py_github_RDI %>%
+  separate_rows(Package_Citation, sep = ",\\s*") %>%
+  filter(Package_Citation != "")
+
+
+#### prepare commits information for cited packages
+python_final_rdi <- python_final %>%
+  mutate(Package_Citation = str_split(slug, "/", simplify = TRUE)[, 2])%>%
+  select(login, Institution, total_additions, total_code_for_slug, contribution_fraction_loc, Package_Citation)
+  
+  colnames(python_final_rdi) <- c( "Cited_Login", "Cited_Org", 
+                                   "Cited_Additions", "Cited_Total_Slug_Additions", "Cited_Package_Fraction", "Package_Citation")
+  
+
+# Function to split a dataframe into chunks based on unique values of a specified column
+split_data_into_chunks <- function(data, column_name) {
+  # Ensure that the column exists in the dataframe
+  if (!column_name %in% names(data)) {
+    stop("Column not found in the dataframe.")
+  }
+  
+  # Split the dataframe into a list of dataframes, each for a unique value of the specified column
+  chunks <- split(data, data[[column_name]])
+  
+  return(chunks)
+}
+
+# Assuming 'df' and 'python_final_rdi' are already defined dataframes
+# Replace 'df' with the actual dataframe variable name
+chunks <- split_data_into_chunks(py_github_RDI_network, "Citing_Package")
+  
+# Function to process each chunk
+process_chunk <- function(chunk) {
+  chunk %>%
+    inner_join(python_final_rdi, by = "Package_Citation") %>%
+    mutate(Dependency_Fraction = Citing_Package_Fraction * Cited_Package_Fraction) %>%
+    group_by(Cited_Org, Citing_Org) %>%
+    summarize(Total_Dependency_Fraction = round(sum(Dependency_Fraction, na.rm = TRUE), 4), .groups = "drop") # Ensure the result is ungrouped for later binding
+}
+
+# Process each chunk and store the results
+results <- lapply(chunks, process_chunk)
+
+# Combine results into a single dataframe
+dependency_summary  <- bind_rows(results) %>%
+  group_by(Cited_Org, Citing_Org) %>%
+  summarize(Total_Dependency_Fraction = sum(Total_Dependency_Fraction, na.rm = TRUE)) %>%
+  ungroup() 
+```
+
+### Double-sided bar graph
+
+```{r}
+# Calculate the total of Fraction_of_Citations, including "Unknown"
+total_citations_incl_unknown <- sum(citations_by_country$Fraction_of_Citations)
+
+# Create and round the percentage column to the nearest hundredth, including "Unknown" in the percentage calculation
+citations_by_country$Percentage_of_Citations <- round(
+  (citations_by_country$Fraction_of_Citations / total_citations_incl_unknown) * 100, 2
+)
+
+# Arrange by descending order of the new percentage column
+ citations_by_country %>%
+  arrange(desc(Percentage_of_Citations))
+```
+
+
+
+```{r}
+
+# Calculate the total of Fraction_of_Citations, excluding "Unknown"
+total_citations <- sum(citations_by_country$Fraction_of_Citations[citations_by_country$Cited_Country != "Unknown"])
+
+# Create and round the percentage column to the nearest hundredth, excluding "Unknown" in the percentage calculation
+citations_by_country$Percentage_of_Citations <- ifelse(
+  citations_by_country$Cited_Country == "Unknown", 
+  NA, 
+  round((citations_by_country$Fraction_of_Citations / total_citations) * 100, 2)
+)
+
+
+
+citations_by_country %>%
+  arrange(desc(Percentage_of_Citations))
+```
+
+
+```{r}
+citations_by_country %>%
+  arrange(desc(Percentage_of_Citations))
+```
+
+
+```{r}
+data <- data.frame(
+  Country = c("United States", "Germany", "United Kingdom", "France", "China", 
+              "Canada", "India", "Netherlands", "Brazil", "Japan",
+              "United States", "Germany", "United Kingdom", "France", "China", 
+              "Canada", "India", "Netherlands", "Brazil", "Japan"),
+  Measure = c("Reverse Dependency %", "Reverse Dependency %", "Reverse Dependency %", "Reverse Dependency %", "Reverse Dependency %", 
+              "Reverse Dependency %", "Reverse Dependency %", "Reverse Dependency %", "Reverse Dependency %", "Reverse Dependency %", 
+              "Package %", "Package %", "Package %", "Package %", "Package %", 
+              "Package %", "Package %", "Package %", "Package %", "Package %"),
+  Value = c(32.8, 10.8, 12.9, 3.3, .9, 2.4, .9, 2.6, 4.6, 4.6, 
+            -26, -8.6, -7.4, -4.9, -4.8,  -3.6, -3.1, -2.9, -2.7, -2.6) # Negative for Dependency %, positive for Code%
+)
+
+# Filter data to include only Code % values for ordering
+code_values <- data %>% 
+  filter(Measure == "Package %") %>% 
+  arrange(desc(Value))
+
+# Reorder Country factor based on Code % values
+data$Country <- factor(data$Country, levels = code_values$Country)
+
+plot <- ggplot(data, aes(x = Country, y = Value, fill = Measure)) +
+  geom_bar(stat = "identity", position = "identity") +# Size of the text, can be adjusted as needed
+  coord_flip() +
+  scale_y_continuous(labels = abs, breaks = seq(-50, 50, by = 10), limits = c(-50, 50)) +
+  labs(y = "Percentage", x = "", title = "Python") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Package %" = "darkorange", "Reverse Dependency %" = "#FFCC99")) + # Add your own colors
+  theme(
+    text = element_text(size = 14), 
+    axis.title = element_text(size = 16), 
+    axis.text = element_text(size = 12), 
+    plot.title = element_text(size = 12, face = "bold", hjust = .5)
+  ) +
+  geom_text(data = subset(data, Value > 0), aes(label = sprintf("%0.1f%%", Value)), 
+            position = position_nudge(y = 0.5), hjust = 0, size = 3.5) +
+  geom_text(data = subset(data, Value < 0), aes(label = sprintf("%0.1f%%", abs(Value))), 
+            position = position_nudge(y = -0.5), hjust = 1, size = 3.5)+
+  theme(legend.position = "bottom")
+
+plot
+
+```
+
+```{r}
+### python_dependencies <- python_dependencies %>%
+                         ##filter(dependencies != "")
+
+# 1. Split the dependencies into a list
+### python_dependencies$dependencies <- strsplit(as.character(python_dependencies$dependencies), ",\\s*")
+
+# 2. Unlist dependencies
+
+## dependencies_expanded <- setNames(stack(setNames(python_dependencies$dependencies, python_dependencies$Package)), c("Package", "Reverse_Dependency"))
+
+# 3. Sorting the dependencies_expanded data frame by the Package column
+## dependencies_expanded <- dependencies_expanded[order(dependencies_expanded$Package), ]
+
+## dependencies_expanded <- dependencies_expanded %>%
+                             ## filter(Package != "")
+
+### python_packages <- python_final$Package
+
+### dependencies_filtered <- dependencies_expanded %>%
+                            ## filter(Package %in% python_packages)
+
+# 4. aggregate reverse dependency information
+
+# Convert to data.table
+### setDT(dependencies_filtered)
+
+# Initialize progress bar
+## pb <- progress_bar$new(total = nrow(dependencies_filtered), clear = FALSE, format = "  :bar :percent")
+
+######## Custom aggregation with progress bar update
+## aggregated_data <- dependencies_filtered[, {
+##   pb$tick()  # Update progress bar
+ ##   .(Reverse_Dependency = paste(unique(Reverse_Dependency), collapse = ", "))
+## }, by = .(Package)]
+```
