@@ -1,0 +1,4 @@
+Our work on OSS aims to analyze open source software in use and we have collected data on installable libraries/packages for programming languages like Python, Julia and R. In addition to that, we have collected project-level repository information for Code.gov/
+
+Modern programming languages like Python, Julia and R, have built-in package registries like PyPi, JuliaPackages, CRAN, etc. Therefore, the data collection task involved accessing the registry as a file or through REST endpoints or by using web-scraping techniques to get a list of packages.
+

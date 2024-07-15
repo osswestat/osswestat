@@ -1,0 +1,4 @@
+- source: project
+  quarto-pub:
+    - id: d119616c-4e22-483a-917a-bcf5bec5e23a
+      url: 'https://oss.quarto.pub/website'

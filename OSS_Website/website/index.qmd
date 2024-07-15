@@ -1,0 +1,23 @@
+---
+title: "Open Source Software: Impact & Diffusion"
+---
+
+### **Project Overview** 
+
+Open Source Software (OSS) is developed, maintained, and extended both within and
+outside of the private sector, through the contribution of independent developers as well as people from universities, government research institutions, businesses, and nonprofits. Despite its ubiquity and immense use, the extent and impact of OSS is currently unknown; reliable measures of OSS developed outside of the business sector are scarce. The creation and use of OSS highlight an aspect of technology diffusion and flow that is not captured in science and technology (S&T) indicators.
+
+Our goal is to discover, collect, and use publicly available non-survey data sources on OSS and to test the feasibility of developing methods to measure the impact and diffusion of OSS innovation.
+
+
+### **Project Goals**
+
+The project aims to discover, collect and use publicly available non-survey data sources on open source software (OSS) development to: (i) characterize the OSS ecosystem by discovering, collecting and analyzing available information on OSS projects (creation and use), contributors (their institutions, sectors and countries), and the interactions among these actors; (ii) use available data to generate multiple contributor and project networks that arise due to these interactions and to analyze the structural features of the networks; (iii) develop methods to measure the impact of projects and developers using network-based (e.g., centrality) and OSS-based measures (e.g., downloads); (iv) study the diffusion of OSS innovation within and across sectors, institutions, and countries; (v) bring forward a unique and novel data product combining various data sources on OSS. 
+
+### **Our Approach**
+
+In the first phase, we defined the scope by choosing OSS categories (type/purpose of software, field, method, e.g., science and engineering) and sectors (business, government, university, nonprofit, foreign), as well as the programming languages. In the second phase, we investigated and documented data sources, including the availability of information in each data source, the acquisition process, potential uses, and showing whether/how these data and variables can be used to develop impact measures of OSS. Third phase involved collection of data from multiple sources identified and evaluated in Phase II based on the availability of the variables of interest. We developed computational methods to link the datasets to obtain additional variables. The final products of this phase, i.e., integrated datasets will be made available to researchers allowing the research community to expand our work. In phase four, we defined and generated multiple networks; visualized and analyzed structural features of these networks to study patterns and dynamics of interactions (e.g., collaborations between developers and reuses between packages). 
+
+The last phase involved descriptive and statistical analyses and modeling of the collected data and generated networks to characterize the OSS community and the interactions, and aims to address the research questions listed in the proposal. 
+
+The dissemination effort involved development, publication, and presentation of various scientific papers. 
