@@ -1,0 +1,500 @@
+---
+title: "CRAN EDA"
+format: 
+  html:
+    toc: true
+    toc-location: left
+    toc-depth: 4
+    number-sections: true
+    code-fold: false
+    embed-resources: true
+execute: 
+  warning: false
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+## Introduction
+
+```{r, message=FALSE}
+library(tidyverse)
+library(RMySQL)
+library(treemapify)
+library(corrplot)
+library(ggthemes)
+library(pander)
+library(ggwes)
+library(knitr)
+library(kableExtra)
+```
+
+## File List
+
+### Input Files
+
+```{r, include=FALSE}
+# load in the downloads by year
+con <- dbConnect(MySQL(), user = "admin", password = "OSS022323",
+    dbname = "cran", host = "oss-1.cij9gk1eehyr.us-east-1.rds.amazonaws.com")
+```
+
+-   cran: Full CRAN Database as of Septmeber 2023 with selected metadata
+
+-   cran_repos: CRAN GitHub repos loaded from database containing repository metrics
+
+```{r}
+cran <- dbReadTable(con, "package_database")
+
+cran_repos <- dbReadTable(con, "package_repo_info")
+```
+
+
+## Exploratory Data Analysis (EDA) of All R Packages on CRAN
+
+This section contains an initial exploratory data analysis on the CRAN database, including the number of dependencies per package, the number of authors per package, number of reverse dependencies per package, and the download data for some of the top packages.
+
+### Count Data for Dependencies, Authors, and Reverse Dependencies
+
+Here, we count the number of authors,dependencies, and reverse dependencies per packages, which are separated by commas, and then store it in an object called "Count_Data". We join this data back to our original dataframe, "cran
+
+
+```{r, tidy=TRUE, eval=FALSE}
+# Writing loop to count number of authors and dependencies across packages
+Count_Data <- seq_len(nrow(cran)) %>%
+  map_df(~{
+    cran[.x, ] %>%
+      select(Package, Depends, Author, Reverse_Depends) %>%
+      map_df(~ifelse(is.na(.x), 0, length(str_split(.x, ",")[[1]]))) %>% ### Count objects separated by commas 
+      mutate(Package = cran$Package[.x])
+  }) %>%
+  select(Package, Author, Depends, Reverse_Depends)
+
+colnames(Count_Data) <- c("Package", "Author_Count", "Depends_Count", 
+                          "Reverse_Depends_Count")
+
+### Join the count variables
+cran <- cran %>% left_join(Count_Data, by = "Package")
+
+# Modify the author count to detect those with "and" and no commas as 2 authors, and count changed observations changed
+cran <- cran %>%
+  # Step 1: Create a new variable to record the previous Author_Count
+  mutate(Previous_Author_Count = Author_Count) %>%
+  # Step 2: Modify the Author_Count
+  mutate(Author_Count = ifelse(str_detect(Author, "\\band\\b") & !str_detect(Author, ","), 2, Author_Count)) %>%
+  # Step 3: Create a new variable to indicate if the Author_Count was changed
+  mutate(Changed = ifelse(Author_Count != Previous_Author_Count, 1, 0))
+
+```
+
+
+#### Dependencies per Package
+
+We will visualize the dependencies counts by creating numeric ranges and storing it in a factor variable. The factor categories are calculated using the "jenks" method, which tries to minimize the variance within factor categories and maximize the variance between factor categories. We output the table to construct percentage counts per category.
+
+```{r}
+### Creating categories for dependency counts
+
+cran <- cran %>%
+          mutate(Depends_Cat = case_when(Depends_Count == 0 ~ "0",
+                                         Depends_Count  == 1 ~ "1",
+                                         Depends_Count  == 2 ~ "2",
+                                         Depends_Count  == 3 | Depends_Count == 4 ~ "3-4",
+                                         Depends_Count  > 4 ~ "5-15"))
+## converting to factor
+cran$Depends_Cat <- as.factor(cran$Depends_Cat)
+
+# Getting counts per category 
+table(cran$Depends_Cat)
+```
+
+A little more than half of the packages 1 dependency, 26% have 0 dependencies listed, 10% have 2 dependencies, 8% have 3 to 4 dependencies, and 4% have 5 or more dependencies.
+
+```{r, tidy=TRUE}
+### Creating inputs for tree map plot
+
+Dependencies <- c("0: 26%", "1: 52%", "2: 10%", "3-4: 8%", "5-15: 4%")
+
+Value <- c(26, 52, 10, 8, 4)
+
+Label <- c("0 Dep: 26%", "1 Dep: 52%", "2 Dep: 10%", "3-4 Dep: 8%", "5-15 Dep: 4%")
+
+Depends_Tree <- cbind(Dependencies, Value, Label)
+
+Depends_Tree <- as.data.frame(Depends_Tree)
+
+Depends_Tree$Value <- as.numeric(Depends_Tree$Value)
+
+### Generating tree map plot
+
+ggplot(Depends_Tree, aes(area = Value, fill = Dependencies, label = Label)) +
+  geom_treemap() +
+  geom_treemap_text(colour = "black",
+                    place = "centre",
+                    size = 15)+
+  ggtitle("Number of Dependencies Per Package (R)")+
+  scale_fill_westat(option = "BLUES")+
+  theme_tufte()+
+  theme(legend.position = "right")
+```
+
+#### Authors per Package
+
+We know from looking at missing data that at least one author is present for each package. The author counts contain some extreme values some we take the log of authors to better show the distribution here.
+
+Again, we do the same thing for authors that we did for dependencies, but instead of using the "jenks" method to determine breaks, we create factor categories based on single authors (1), smaller groups (2-5), medium sized groups (6-9), and large groups (10+). We are more concerned with the size of the group rather than trying to minimize variance within the separate groups for authors 
+
+```{r}
+### Creating categories for numeric ranges 
+cran <- cran %>%
+         mutate(Authors_Cat = case_when(
+                                         Author_Count == 1 ~ "1",
+                                         Author_Count > 1 & Author_Count < 6 ~ "2-5",
+                                         Author_Count > 5 & Author_Count < 10 ~ "6-9",
+                                         Author_Count > 9  ~ "10+"))
+
+
+### Assigning categorical variables to class factor and reordering
+cran$Authors_Cat <- factor(cran$Authors_Cat, levels = c("1", "2-5", "6-9", "10+"))
+
+### getting counts per category
+table(cran$Authors_Cat)
+```
+
+39% of packages have only one author, 52% have 2-5, 6% have 6-9, and only 3% have 10+ authors
+
+```{r, tidy=TRUE}
+### Creating inputs for tree map plot
+
+Authors <- c("1", "2-5", "6-9", "10+")
+
+Value <- c(39, 52, 6, 3)
+
+Label <- c("1 Aut: 39%", "2-5 Aut: 52%", "6-9 Aut: 6%", "10+ Aut: 3%")
+
+Authors_Tree <- cbind(Authors, Value, Label)
+
+Authors_Tree <- as.data.frame(Authors_Tree)
+
+Authors_Tree$Value <- as.numeric(Authors_Tree$Value)
+
+
+ggplot(Authors_Tree, aes(area = Value, fill = Authors, label = Label)) +
+  geom_treemap() +
+  geom_treemap_text(colour = "black",
+                    place = "centre",
+                    size = 15)+
+  ggtitle("Number of Authors Per Package")+
+  scale_fill_westat(option = "BLUES", breaks = c("1", "2-5", "6-9", "10+"))+ 
+  theme_tufte()
+```
+
+#### Reverse Dependencies per Package
+
+As we already know, most packages have 0 reverse dependencies (92%). We will subset to those that have at least one, and look further at that distribution in the histogram and TreeMap plot. After filtering for those with at least 1, we are left with 1644 total packages
+
+```{r}
+### Creating categories for numeric ranges 
+cran <- cran %>%
+         mutate(Reverse_Depends_Cat = case_when(
+           
+Reverse_Depends_Count > 0 & Reverse_Depends_Count < 4 ~ "1-3",
+
+Reverse_Depends_Count > 3 & Reverse_Depends_Count < 9 ~ "4-8",
+  
+Reverse_Depends_Count > 8 & Reverse_Depends_Count < 20 ~ "9-19",
+
+Reverse_Depends_Count > 19 ~ "20+",
+
+
+))
+
+### Assigning categorical variables to class factor
+cran$Reverse_Depends_Cat <- as.factor(cran$Reverse_Depends_Cat)
+
+### getting counts per category
+table(cran$Reverse_Depends_Cat)
+```
+
+Of the packages that have at least one reverse dependency, 77% have 1 to 3, 13% have 4 to 8, 5% have 9 to 19 and 5% have 20+. Recall that only 8% of the packages have any reverse dependencies to begin with.
+
+```{r,}
+### Creating inputs for tree map plot
+
+Rev_Dep <- c("0: 92%", "1-3: 6%", "4-10: 1%", "11+: 1%")
+
+Value <- c(80, 6, 2, 2)
+
+Label <- c("0: 92%", "1-3: 6%", "4-10: 1%", "11+: 1%")
+
+Reverse_Depends_Tree <- cbind(Rev_Dep, Value, Label)
+
+Reverse_Depends_Tree <- as.data.frame(Reverse_Depends_Tree)
+
+Reverse_Depends_Tree$Value <- as.numeric(Reverse_Depends_Tree$Value)
+
+ggplot(Reverse_Depends_Tree, aes(area = Value, fill = Rev_Dep, label = Label)) +
+  geom_treemap() +
+  geom_treemap_text(colour = "black",
+                    place = "centre",
+                    size = 15)+
+  ggtitle("Number of Reverse Dependencies Per Package (R)")+
+  scale_fill_westat(option = "BLUES", breaks = c("0: 92%", "1-3: 6%", "4-10: 1%", "11+: 1%"))+
+  theme_tufte()+
+  theme(legend.position = "right")
+```
+
+### Download Data
+
+#### Number of Downloads
+
+This shows the 20 packages with the most downloads all-time and normalized up to July 31st, 2023. GGplot2 is the number one package all-time, which makes sense, as data visualization is regarded as one of R's major strong points. Magrittr has the second most and rlang has the third most. For normalized, the top 20 changes up slightly and rlang has the most based on normalized downloads. We also get an idea of the sectors for these packages. 
+
+
+```{r, tidy=TRUE, fig.show='hold', out.width='50%'}
+# replaces NAs with Unknown for graph output
+cran$Sector[is.na(cran$Sector)] <- "Unknown"
+
+
+all_possible_sectors <- c("Academic", "Business", "Nonprofit", "Government", "Unknown")
+
+# Use the factor levels from the main 'cran' dataframe
+cran$Sector <- factor(cran$Sector, levels = all_possible_sectors)
+
+#-------------------------------------------------------------------------
+
+### Getting the top 20 downloaded packages
+ Top_20_Downloads_Normalized <-  cran %>%
+  top_n(20, Downloads_Normalized)
+  
+  Top_20_Downloads_Normalized$Package <- factor(Top_20_Downloads_Normalized$Package, 
+                           levels = Top_20_Downloads_Normalized$Package[order(Top_20_Downloads_Normalized$Downloads_Normalized)])
+  
+# Ensure that the Sector variable in your data frame has all these levels
+Top_20_Downloads_Normalized$Sector <- factor(Top_20_Downloads_Normalized$Sector, levels = all_possible_sectors)
+  
+# plot the top 20
+  Top_20_Downloads_Normalized %>%
+ggplot(aes(x = Package, y = as.numeric(Downloads_Normalized), fill = Sector))+
+    geom_bar(stat = "identity")+
+    coord_flip()+
+  ggtitle(label = "Packages With the Most Downloads (Normalized)",
+          subtitle = "Top 20 up until September 2023")+
+  xlab("Package Name")+
+  ylab("# of Downloads")+
+    scale_y_continuous(labels = scales::comma)+
+    scale_fill_westat(option = "BLUES", drop = FALSE)+
+    theme_clean()
+  
+ #------------------------------------------------------------------------ 
+  
+### Getting the top 20 downloaded packages
+ Top_20_Downloads_AT <-  cran %>%
+  top_n(20, Downloads_All_Time)
+  
+  Top_20_Downloads_AT$Package <- factor(Top_20_Downloads_AT$Package, 
+                           levels = Top_20_Downloads_AT$Package[order(Top_20_Downloads_AT$Downloads_All_Time)])
+  
+  
+# Ensure that the Sector variable in your data frame has all these levels
+Top_20_Downloads_AT$Sector <- factor(Top_20_Downloads_AT$Sector, levels = all_possible_sectors)
+  
+# plot the top 20
+  Top_20_Downloads_AT %>%
+ggplot(aes(x = Package, y = as.numeric(Downloads_All_Time), fill = Sector))+
+    geom_bar(stat = "identity")+
+    coord_flip()+
+  ggtitle(label = "Packages With the Most Downloads (All-time)",
+          subtitle = "Top 20 up until September 2023")+
+  xlab("Package Name")+
+  ylab("# of Downloads")+
+    scale_y_continuous(labels = scales::comma)+
+    scale_fill_westat(option = "BLUES", drop = FALSE)+
+    theme_clean()
+```
+
+
+#### Title Descriptions for Most Downloads
+
+Here, we get some insight on what these top 20 packages are used for. It appears organization of data, visualizing data, and cleaning data are some of the key highlights from the top downloaded packages.
+
+```{r, tidy=TRUE}
+Top_20_Downloads_Normalized %>%
+  select(Package, Sector, Title, Downloads_Normalized)%>%
+  arrange(desc(Downloads_Normalized))%>%
+  kbl(caption = "Title Descriptions for the Most Downloaded Packages (Normalized)")%>%
+  kable_classic()%>%
+  kable_styling(font_size = 12,  full_width = T)%>%
+ row_spec(0, bold = T, background = westat_blue(), color = "white")%>%
+  column_spec(1:3, border_right = T)%>%
+  scroll_box()
+
+
+Top_20_Downloads_AT %>%
+  select(Package, Sector, Title, Downloads_All_Time)%>%
+  arrange(desc(Downloads_All_Time))%>%
+  kbl(caption = "Title Descriptions for the Most Downloaded Packages (All-time)")%>%
+  kable_classic()%>%
+  kable_styling(font_size = 12, full_width = T)%>%
+ row_spec(0, bold = T, background = westat_blue(), color = "white")%>%
+  column_spec(1:3, border_right = T)%>%
+  scroll_box()
+```
+
+## GitHub Package EDA
+
+For the packages on GitHub, we were able to collect some impact measures relating to repository metrics. We loaded our table from our database and visualize a few of them here.
+
+```{r}
+#### filtering for URLs that only contain github.com in the link
+cran_github <- cran %>% filter(grepl("https://github.com", URL, ignore.case = TRUE))
+
+### extracting the URL portion with the slug
+cran_github <- cran_github %>%
+          mutate(URL = str_extract(URL, "https://github.com/([^/]+)/([^/]+)"))
+
+
+### removing commas
+cran_github <- cran_github %>%
+          mutate(URL = sub(",.*$",  "",  URL))
+
+### extracting slug portion
+cran_github <- cran_github %>%
+          mutate(slug = str_extract(URL, "(?<=github.com/)[^/]+/[^/]+"))
+
+
+cran_github <- cran_github %>%
+          mutate(slug = str_extract(slug, "[^\\s]+/[^\\s]+"))
+
+
+### creating slug for linkage
+cran_repos <- cran_repos %>%
+  mutate(slug = paste(owner, repo, sep = "/"))
+
+### join to cran by Package for more data
+cran_repos <- cran_github %>%
+                  left_join(cran_repos, by = "slug")%>%
+                  distinct(slug, .keep_all = T)
+
+
+### create "year_created" variable
+cran_repos$year_created <- substr(cran_repos$created_at, 1, 4)
+
+```
+
+### Repository Impact Measures
+
+#### Stars
+
+creating a categorical star count so we can visualize in a treemap plot
+
+```{r}
+### Creating categories for dependency counts
+
+cran_repos <- cran_repos %>%
+          mutate(Star_Cat = case_when(stargazer_count >= 0 & stargazer_count < 11 ~ "0-10",
+                                         stargazer_count >= 11 &  stargazer_count < 51 ~ "11-50",
+                                         stargazer_count >= 51 & stargazer_count < 200 ~ "51-199",
+                                         stargazer_count >= 200 ~ "200+"))
+## converting to factor
+cran_repos$Star_Cat <- as.factor(cran_repos$Star_Cat)
+
+# Getting counts per category 
+pander(table(cran_repos$Star_Cat))
+```
+
+Over half the repositories have 0-10 stars, and only 6% have 200 or more stars
+
+```{r}
+### Creating inputs for tree map plot
+
+Stars <- c("0-10", "11-50", "51-199", "200+")
+
+Value <- c(56, 26, 12, 6)
+
+Label <- c("0-10 Stars: 56%", "11-50 Stars: 26%", "51-199 Stars: 12%", "200+ Stars: 6%")
+
+Stars_Tree <- cbind(Stars, Value, Label)
+
+Stars_Tree<- as.data.frame(Stars_Tree)
+
+Stars_Tree$Value <- as.numeric(Stars_Tree$Value)
+
+### Generating tree map plot
+
+ggplot(Stars_Tree, aes(area = Value, fill = Stars, label = Label)) +
+  geom_treemap() +
+  geom_treemap_text(colour = "black",
+                    place = "centre",
+                    size = 15)+
+  ggtitle("Number of Stars Per Repository on Github")+
+  scale_fill_westat(option = "BLUES", breaks =  c("0-10", "11-50", "51-199", "200+"))+
+  theme_tufte()
+```
+
+#### Fork Count
+
+Again, creating a categorical fork count so we can visualize in a treemap plot
+
+```{r}
+### Creating categories for dependency counts
+
+cran_repos <- cran_repos %>%
+          mutate(Fork_Cat = case_when(fork_count >= 0 & fork_count < 2 ~ "0-1",
+                                         fork_count >= 2 &  fork_count < 10 ~ "2-9",
+                                         fork_count >= 10 & fork_count < 50 ~ "10-49",
+                                         fork_count >= 50 ~ "50+"))
+## converting to factor
+cran_repos$Fork_Cat <- as.factor(cran_repos$Fork_Cat)
+
+# Getting counts per category 
+pander(table(cran_repos$Fork_Cat))
+```
+
+0-9 forks makes up over 80% of the repositories, and only 3% have a fork count of at least 50.
+
+```{r}
+### Creating inputs for tree map plot
+
+Forks <- c("0-1", "2-9", "10-49", "50+")
+
+Value <- c(45, 36, 16, 3)
+
+Label <- c("0-1 Forks: 45%", "2-9 Forks: 36%", "10-49 Forks: 16%", "50+ Forks: 3%")
+
+Forks_Tree <- cbind(Forks, Value, Label)
+
+Forks_Tree<- as.data.frame(Forks_Tree)
+
+Forks_Tree$Value <- as.numeric(Forks_Tree$Value)
+
+### Generating tree map plot
+
+ggplot(Forks_Tree, aes(area = Value, fill = Forks, label = Label)) +
+  geom_treemap() +
+  geom_treemap_text(colour = "black",
+                    place = "centre",
+                    size = 15)+
+  ggtitle("Number of Stars Per Repository on Github")+
+  scale_fill_westat(option = "BLUES", breaks = c("0-1", "2-9", "10-49", "50+"))
+```
+
+#### Correlations
+
+The correlation matrix shows that fork count and star count are highly correlated (.94). Also, normalized downloads and all-time downloads are highly correlated as expected (.95). Interestingly, reverse dependency count is more correlated with all-time downloads than normalized downloads. Most other correlations are pretty weak, but are all positive.
+
+
+```{r}
+All_Impacts <- cran_repos %>%
+  select(Downloads_All_Time, Downloads_Normalized, Reverse_Depends_Count, fork_count, stargazer_count, 
+         issues_count, pull_requests_count, issues_count)
+
+All_Impacts <- na.omit(All_Impacts)
+
+Corr <- cor(All_Impacts)
+
+corrplot(Corr, method = "color", type = "upper", order = "hclust",
+         addCoef.col = "black", # Add correlation coefficients
+         tl.col="black", tl.srt=45)
+```
+
