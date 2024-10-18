@@ -46,21 +46,20 @@ library(readxl)
 
 ```{r, warning=FALSE}
 cran <- read.csv("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\cran.csv")%>%
-                  select(-X)
+                  dplyr::select(-X)
 
 cran_repos <- read.csv("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\cran_repos.csv")%>%
-                    select(-X)
+                    dplyr::select(-X)
 
 cran_users <- read_excel("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\cran_users.xlsx")
 cran_users <- cran_users[,-1]
 
 user_commits <- read.csv("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\cran_user_commits.csv")%>%
-                    select(-X) 
+                    dplyr::select(-X) 
 
 user_countries <- read.csv("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\cran_user_countries.csv")%>%
-                    select(-X)
+                    dplyr::select(-X)
 ```
-
 
 # Analysis: R Programming Language
 
@@ -452,7 +451,7 @@ cran_repos_unique_time
 
 ### GitHub R Package Contributors
 
-Now we look at distributions of all R contributors on GitHub. After GitHub data collection, we were able to identify 14328 unique R contributors. 
+Now we look at distributions of all R contributors on GitHub. After GitHub data collection, we were able to identify 14,328 unique R contributors. 
 
 ```{r, warning=FALSE}
 cran_users_unique <- cran_users %>%
@@ -699,10 +698,6 @@ sector_aggregated_additions_time$percentage_label_excl_unknown <- ifelse(is.na(s
                                                                     NA_character_,
                                                                     percent(sector_aggregated_additions_time$percentage_contribution_excl_unknown / 100))
 
-# Optional: Print the head of the final dataframe to check the results
-print(head(sector_aggregated_additions_time))
-sum(sector_aggregated_additions_time$overall_addition_contribution)
-
 # Assuming sector_aggregated_additions contains the necessary processed data
 # Filter out the 'Unknown' sector for plotting
 plot_data <- sector_aggregated_additions_time %>%
@@ -711,7 +706,7 @@ plot_data <- sector_aggregated_additions_time %>%
 
 ```
 
-###### Bar chart over time 
+The following graph shows fractional credit for sectors over time.
 
 ```{r}
 # Stacked Bar Chart for Yearly Totals
@@ -726,9 +721,8 @@ R_Sectors_time
 
 # ggsave(filename = "\\\\westat.com\\dfs\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\New Graphs\\R_Sectors_time.png", plot = R_Sectors_time, width = 8, height = 6, dpi = 300)
 ```
-###### line graph over time 
 
-```{r}
+```{r, results='hide', eval=FALSE}
 # Line Chart for Percentages by Sector (excluding 'Unknown')
 ggplot(plot_data,
        aes(x = year_created, y = percentage_contribution_excl_unknown, color = sector, group = sector)) +
@@ -742,7 +736,7 @@ ggplot(plot_data,
 ```
 
 
-```{r}
+```{r, results='hide', eval=FALSE}
 # Create the stacked bar plot
 ggplot(plot_data, aes(x = year_created, y = percentage_contribution_excl_unknown, fill = sector)) +
   geom_bar(stat = "identity") +
@@ -1028,6 +1022,7 @@ plot_data3 <- top_countries_by_year_excl_unknown %>%
          country_final %in% c("United States", "Germany", "United Kingdom", "France", "Canada", "Australia", "Netherlands", "Switzerland", "Spain", "China"))
 ```
 
+The following graph shows all countries fractional credit over time
 
 ```{r}
 my_colors <- c("#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF", "#000000",
@@ -1044,6 +1039,8 @@ ggplot(plot_data2, aes(x = year_created, y = overall_contribution_fraction, fill
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom")
 ```
+
+This subsets to the top 10 that we identified previously
 
 ```{r}
 my_colors <- c("#6B8E23", "#8FBC8F", "#2E8B57", "#4682B4", "#87CEEB",
@@ -1068,7 +1065,7 @@ R_Country_time
 
 
 
-```{r}
+```{r, results='hide', include=FALSE}
 
 my_colors <- c("#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF", "#000000",
                "#800000", "#008000", "#000080", "#808000", "#800080", "#008080", "#808080",
@@ -1087,7 +1084,7 @@ ggplot(plot_data2,
         legend.position = "bottom")
 ```
 
-```{r}
+```{r, results='hide', include=FALSE}
 ggplot(plot_data3,
        aes(x = year_created, y = percentage_contribution_excl_unknown, color = country_final, group = country_final)) +
   geom_line() +
@@ -1100,9 +1097,7 @@ ggplot(plot_data3,
 ```
 
 
-
-
-```{r}
+```{r, results='hide', include=FALSE}
 # Create the stacked bar plot
 ggplot(plot_data2, aes(x = year_created, y = percentage_contribution_excl_unknown, fill = country_final)) +
   geom_bar(stat = "identity") +
@@ -1113,7 +1108,7 @@ ggplot(plot_data2, aes(x = year_created, y = percentage_contribution_excl_unknow
         legend.position = "bottom")  # Place the legend at the bottom
 ```
 
-```{r}
+```{r, results='hide', include=FALSE}
 # Create the stacked bar plot
 ggplot(plot_data3, aes(x = year_created, y = percentage_contribution_excl_unknown, fill = country_final)) +
   geom_bar(stat = "identity") +
@@ -1299,6 +1294,8 @@ ggplot(top_10_orgs_additions, aes(x = reorder(organization, percentage_contribut
 ```
 
 ## Network Analysis
+
+We create edgelists for countries and sectors in the following section
 
 ### Countries
 
@@ -1523,7 +1520,7 @@ citations_citings_dependency_summary <- citations_by_sector %>%
 citations_citings_dependency_summary$RDI <- round(citations_citings_dependency_summary$Numerator_RDI / citations_citings_dependency_summary$Denominator_RDI,4)
 ```
 
-```{r}
+```{r, include=FALSE, eval=FALSE}
 write.csv(dependency_summary, file = "\\\\westat.com\\dfs\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\New Graphs\\R_Sectors_edgelist.csv", row.names = F)
 ```
 
@@ -1562,6 +1559,7 @@ citations_by_country %>%
   arrange(desc(Percentage_of_Citations))
 ```
 
+The following graph shows a countries' lines of code credit compared to the percentage of citations they have from other countries (or reverse dependencies in package labguage)
 
 ```{r}
 
@@ -1823,7 +1821,13 @@ ggplot(Top_Institution_repos, aes(x = Institution, y = log(fork_count), fill = S
   
 ```
 
+The following code is some analysis for a working paper... results are not commented on at the moment, but we want to see if larger teams have more impact on average.
+
 ## How does team size relate to impact?
+
+**test removing extreme team size outliers, add reverse dependencies, normalized and non-normalized**
+
+**Literature on team size and citations - do we see same thing?**
 
 ```{r}
 ## Create team size
@@ -1841,13 +1845,15 @@ user_commits_total <- user_commits_total %>%
   mutate(
     normalization_factor = ifelse(is.na(year_created), NA, 2023 - year_created + 1),
     stargazer_count_normalized = ifelse(is.na(stargazer_count) | is.na(normalization_factor), stargazer_count, stargazer_count / normalization_factor),
-    fork_count_normalized = ifelse(is.na(fork_count) | is.na(normalization_factor), fork_count, fork_count / normalization_factor)
+    fork_count_normalized = ifelse(is.na(fork_count) | is.na(normalization_factor), fork_count, fork_count / normalization_factor),
+    reverse_dep_normalized = ifelse(is.na(Reverse_Depends_Count) | is.na(normalization_factor), Reverse_Depends_Count, Reverse_Depends_Count / normalization_factor)
   ) 
 
 ```
 
-
 ### Bin teamsize
+
+#### With outliers
 
 ```{r}
 user_commits_distinct <- user_commits_total %>%
@@ -1868,37 +1874,366 @@ bin_labels <- c("[1]", "[2]", "[3-4]", "[5-7]", "[8-880]")
 user_commits_distinct <- user_commits_distinct %>%
   mutate(team_size_bin = cut(team_size, breaks = bins, labels = bin_labels, include.lowest = TRUE, right = FALSE))
 
-quantile(user_commits_distinct$team_size, probs = seq(0, 1, .1))
+## convert 
 table(user_commits_distinct$team_size_bin)
+
+mean(user_commits_distinct$team_size)
 ```
-#### boxplot viz
+
+#### No outliers (IQR)
+
+```{r}
+# Calculate Q1, Q3, and IQR
+Q1 <- quantile(user_commits_distinct$team_size, 0.25)
+Q3 <- quantile(user_commits_distinct$team_size, 0.75)
+IQR <- Q3 - Q1
+
+# Define lower and upper bounds
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+
+# Filter out outliers
+user_commits_no_outliers1 <- user_commits_distinct %>%
+  filter(team_size >= lower_bound & team_size <= upper_bound)
+
+quantile(user_commits_no_outliers1$team_size, probs = seq(0, 1, .1))
+
+
+# Define the bins based on the updated percentiles
+bins_no_outliers1 <- c(1, 2, 3, 5, 8)
+
+# Create labels for the bins
+bin_labels_no_outliers1 <- c("[1]", "[2]", "[3-4]", "[5-8]")
+
+
+# Create a new column with binned team sizes and custom labels
+user_commits_no_outliers1 <- user_commits_no_outliers1 %>%
+  mutate(team_size_bin = cut(team_size, breaks = bins_no_outliers1, labels = bin_labels_no_outliers1, include.lowest = TRUE, right = FALSE))
+
+# View the table of binned team sizes
+table(user_commits_no_outliers1$team_size_bin)
+
+```
+
+#### No outliers (z-score)
+
+```{r}
+# Calculate the mean and standard deviation of team_size
+mean_team_size <- mean(user_commits_distinct$team_size)
+sd_team_size <- sd(user_commits_distinct$team_size)
+
+# Calculate Z-scores
+user_commits_distinct <- user_commits_distinct %>%
+  mutate(z_score = (team_size - mean_team_size) / sd_team_size)
+
+# Define a threshold for Z-scores (commonly 3 or 2.5)
+z_threshold <- 3
+
+# Filter out outliers based on Z-score
+user_commits_no_outliers_z <- user_commits_distinct %>%
+  filter(abs(z_score) <= z_threshold)
+
+quantile(user_commits_no_outliers_z$team_size, probs = seq(0, 1, .1))
+
+# Define the bins based on the updated percentiles
+bins_no_outliers_z <- c(1, 2, 3, 5, 8, 58)
+
+# Create labels for the bins
+bin_labels_no_outliers_z <- c("[1]", "[2]", "[3-4]", "[5-6]", "[7-58]")
+
+# Create a new column with binned team sizes and custom labels
+user_commits_no_outliers_z <- user_commits_no_outliers_z %>%
+  mutate(team_size_bin = cut(team_size, breaks = bins_no_outliers_z , labels = bin_labels_no_outliers_z, include.lowest = TRUE, right = FALSE))
+
+# View the table of binned team sizes
+table(user_commits_no_outliers_z$team_size_bin)
+
+```
+
+
+### boxplot viz (With Outliers)
+
+#### Normalized
 
 ```{r, warning=FALSE}
+# Define a custom theme
+custom_theme <- theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+
 # Plot stargazer_count_normalized vs. team_size_bin
-ggplot(user_commits_distinct, aes(x = team_size_bin, y = stargazer_count_normalized)) +
-  geom_boxplot() +
-  labs(title = "Stargazer Count Normalized vs. Team Size Bin", x = "Team Size Bin", y = "Stargazer Count Normalized") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggplot(user_commits_distinct, aes(x = team_size_bin, y = log(stargazer_count_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_westat(option = "BLUES", drop = FALSE) +
+  labs(x = "Team Size Bin", y = "Stargazer Count Normalized", fill = "Team Size") +
+  custom_theme
 
 # Plot fork_count_normalized vs. team_size_bin
-ggplot(user_commits_distinct, aes(x = team_size_bin, y = fork_count_normalized)) +
-  geom_boxplot() +
-  labs(title = "Fork Count Normalized vs. Team Size Bin", x = "Team Size Bin", y = "Fork Count Normalized") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggplot(user_commits_distinct, aes(x = team_size_bin, y = log(fork_count_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Fork Count Normalized", fill = "Team Size") +
+  custom_theme
 
 # Plot Downloads_Normalized vs. team_size_bin
-ggplot(user_commits_distinct, aes(x = team_size_bin, y = Downloads_Normalized)) +
-  geom_boxplot() +
-  labs(title = "Downloads Normalized vs. Team Size Bin", x = "Team Size Bin", y = "Downloads Normalized") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggplot(user_commits_distinct, aes(x = team_size_bin, y = log(Downloads_Normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set5") +
+  labs(x = "Team Size Bin", y = "Downloads Normalized", fill = "Team Size") +
+  custom_theme
+
+# Plot Downloads_Normalized vs. team_size_bin
+ggplot(user_commits_distinct, aes(x = team_size_bin, y = log(reverse_dep_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set5") +
+  labs(x = "Team Size Bin", y = "Rev Dep Normalized", fill = "Team Size") +
+  custom_theme
+
 ```
 
-#### correlation viz
+#### non-normalized
+
+```{r, warning=FALSE}
+# Define a custom theme
+custom_theme <- theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+
+# Plot stargazer_count_normalized vs. team_size_bin
+ggplot(user_commits_distinct, aes(x = team_size_bin, y = log(stargazer_count), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_westat(option = "BLUES", drop = FALSE) +
+  labs(x = "Team Size Bin", y = "Stargazer Count", fill = "Team Size") +
+  custom_theme
+
+
+# Plot fork_count_normalized vs. team_size_bin
+ggplot(user_commits_distinct, aes(x = team_size_bin, y = log(fork_count), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Fork Count", fill = "Team Size") +
+  custom_theme
+
+# Plot Downloads_Normalized vs. team_size_bin
+ggplot(user_commits_distinct, aes(x = team_size_bin, y = log(Downloads_All_Time), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set5") +
+  labs(x = "Team Size Bin", y = "Downloads", fill = "Team Size") +
+  custom_theme
+
+# Plot Downloads_Normalized vs. team_size_bin
+ggplot(user_commits_distinct, aes(x = team_size_bin, y = log(Reverse_Depends_Count), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set5") +
+  labs(x = "Team Size Bin", y = "Rev Dep", fill = "Team Size") +
+  custom_theme
+
+
+
+```
+
+### boxplot viz (no outliers IQR)
+
+#### Normalized
+
+```{r, warning=FALSE}
+# Define a custom theme
+custom_theme <- theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+
+# Plot stargazer_count_normalized vs. team_size_bin
+ggplot(user_commits_no_outliers1, aes(x = team_size_bin, y = log(stargazer_count_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_westat(option = "BLUES", drop = FALSE) +
+  labs(x = "Team Size Bin", y = "Stargazer Count Normalized", fill = "Team Size") +
+  custom_theme
+
+# Plot fork_count_normalized vs. team_size_bin
+ggplot(user_commits_no_outliers1, aes(x = team_size_bin, y = log(fork_count_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Fork Count Normalized", fill = "Team Size") +
+  custom_theme
+
+# Plot Downloads_Normalized vs. team_size_bin
+ggplot(user_commits_no_outliers1, aes(x = team_size_bin, y = log(Downloads_Normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set5") +
+  labs(x = "Team Size Bin", y = "Downloads Normalized", fill = "Team Size") +
+  custom_theme
+
+# Plot Downloads_Normalized vs. team_size_bin
+ggplot(user_commits_no_outliers1, aes(x = team_size_bin, y = log(reverse_dep_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set5") +
+  labs(x = "Team Size Bin", y = "Rev Dep Normalized", fill = "Team Size") +
+  custom_theme
+
+```
+
+#### non-normalized
+
+```{r, warning=FALSE}
+# Define a custom theme
+custom_theme <- theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+
+# Plot stargazer_count_normalized vs. team_size_bin
+ggplot(user_commits_no_outliers1, aes(x = team_size_bin, y = log(stargazer_count), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_westat(option = "BLUES", drop = FALSE) +
+  labs(x = "Team Size Bin", y = "Stargazer Count", fill = "Team Size") +
+  custom_theme
+
+
+# Plot fork_count_normalized vs. team_size_bin
+ggplot(user_commits_no_outliers1, aes(x = team_size_bin, y = log(fork_count), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Fork Count", fill = "Team Size") +
+  custom_theme
+
+# Plot Downloads_Normalized vs. team_size_bin
+ggplot(user_commits_no_outliers1, aes(x = team_size_bin, y = log(Downloads_All_Time), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set5") +
+  labs(x = "Team Size Bin", y = "Downloads", fill = "Team Size") +
+  custom_theme
+
+# Plot Downloads_Normalized vs. team_size_bin
+ggplot(user_commits_no_outliers1, aes(x = team_size_bin, y = log(Reverse_Depends_Count), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set5") +
+  labs(x = "Team Size Bin", y = "Rev Dep", fill = "Team Size") +
+  custom_theme
+
+
+```
+
+### boxplot viz (no outliers z-score)
+
+#### Normalized
+
+```{r, warning=FALSE}
+# Define a custom theme
+custom_theme <- theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+
+# Plot stargazer_count_normalized vs. team_size_bin
+ggplot(user_commits_no_outliers_z, aes(x = team_size_bin, y = log(stargazer_count_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_westat(option = "BLUES", drop = FALSE) +
+  labs(x = "Team Size Bin", y = "Stargazer Count Normalized", fill = "Team Size") +
+  custom_theme
+
+# Plot fork_count_normalized vs. team_size_bin
+ggplot(user_commits_no_outliers_z, aes(x = team_size_bin, y = log(fork_count_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Fork Count Normalized", fill = "Team Size") +
+  custom_theme
+
+# Plot Downloads_Normalized vs. team_size_bin
+ggplot(user_commits_no_outliers_z, aes(x = team_size_bin, y = log(Downloads_Normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set5") +
+  labs(x = "Team Size Bin", y = "Downloads Normalized", fill = "Team Size") +
+  custom_theme
+
+# Plot Downloads_Normalized vs. team_size_bin
+ggplot(user_commits_no_outliers_z, aes(x = team_size_bin, y = log(reverse_dep_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set5") +
+  labs(x = "Team Size Bin", y = "Rev Dep Normalized", fill = "Team Size") +
+  custom_theme
+```
+
+#### non-normalized
+
+```{r, warning=FALSE}
+# Define a custom theme
+custom_theme <- theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+
+# Plot stargazer_count_normalized vs. team_size_bin
+ggplot(user_commits_no_outliers_z, aes(x = team_size_bin, y = log(stargazer_count), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_westat(option = "BLUES", drop = FALSE) +
+  labs(x = "Team Size Bin", y = "Stargazer Count", fill = "Team Size") +
+  custom_theme
+
+
+# Plot fork_count_normalized vs. team_size_bin
+ggplot(user_commits_no_outliers_z, aes(x = team_size_bin, y = log(fork_count), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Fork Count", fill = "Team Size") +
+  custom_theme
+
+# Plot Downloads_Normalized vs. team_size_bin
+ggplot(user_commits_no_outliers_z, aes(x = team_size_bin, y = log(Downloads_All_Time), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set5") +
+  labs(x = "Team Size Bin", y = "Downloads", fill = "Team Size") +
+  custom_theme
+
+# Plot Downloads_Normalized vs. team_size_bin
+ggplot(user_commits_no_outliers_z, aes(x = team_size_bin, y = log(Reverse_Depends_Count), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set5") +
+  labs(x = "Team Size Bin", y = "Rev Dep", fill = "Team Size") +
+  custom_theme
+```
+
+
+### correlation viz (with outliers)
+
+#### normalized
 
 ```{r}
 # Calculate correlation between team_size and the normalized counts
 correlation_matrix <- user_commits_distinct %>%
-  select(team_size, stargazer_count_normalized, fork_count_normalized, Downloads_Normalized) %>%
+  select(team_size, stargazer_count_normalized, fork_count_normalized, Downloads_Normalized, reverse_dep_normalized) %>%
   cor(use = "complete.obs")
 
 # View the correlation matrix
@@ -1907,7 +2242,6 @@ print(correlation_matrix)
 
 ```{r}
 library(reshape2)
-
 # Melt the correlation matrix
 melted_correlation_matrix <- melt(correlation_matrix)
 
@@ -1921,15 +2255,106 @@ ggplot(data = melted_correlation_matrix, aes(x = Var1, y = Var2, fill = value)) 
 
 ```
 
-#### models (continuous team_size)
+#### non-normalized
+
+```{r}
+# Calculate correlation between team_size and the normalized counts
+correlation_matrix <- user_commits_distinct %>%
+  select(team_size, stargazer_count, fork_count, Downloads_All_Time, Reverse_Depends_Count) %>%
+  cor(use = "complete.obs")
+
+# View the correlation matrix
+print(correlation_matrix)
+```
+
+```{r}
+# Melt the correlation matrix
+melted_correlation_matrix <- melt(correlation_matrix)
+
+ggplot(data = melted_correlation_matrix, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2)), color = "black") +
+  scale_fill_gradient2(low = "blue", high = "darkblue", mid = "lightblue", midpoint = 0, limit = c(-1, 1), space = "Lab", name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(title = "Correlation Matrix Heatmap", x = "", y = "")
+
+```
+
+### correlation viz (no outliers z-score)
+
+#### normalized
+
+```{r}
+# Calculate correlation between team_size and the normalized counts
+correlation_matrix <- user_commits_no_outliers_z %>%
+  select(team_size, stargazer_count_normalized, fork_count_normalized, Downloads_Normalized, reverse_dep_normalized) %>%
+  cor(use = "complete.obs")
+
+# View the correlation matrix
+print(correlation_matrix)
+```
+
+```{r}
+# Melt the correlation matrix
+melted_correlation_matrix <- melt(correlation_matrix)
+
+ggplot(data = melted_correlation_matrix, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2)), color = "black") +
+  scale_fill_gradient2(low = "blue", high = "darkblue", mid = "lightblue", midpoint = 0, limit = c(-1, 1), space = "Lab", name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(title = "Correlation Matrix Heatmap", x = "", y = "")
+
+```
+
+#### non-normalized
+
+```{r}
+# Calculate correlation between team_size and the normalized counts
+correlation_matrix <- user_commits_no_outliers_z %>%
+  select(team_size, stargazer_count, fork_count, Downloads_All_Time, Reverse_Depends_Count) %>%
+  cor(use = "complete.obs")
+
+# View the correlation matrix
+print(correlation_matrix)
+```
+
+```{r}
+# Melt the correlation matrix
+melted_correlation_matrix <- melt(correlation_matrix)
+
+ggplot(data = melted_correlation_matrix, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2)), color = "black") +
+  scale_fill_gradient2(low = "blue", high = "darkblue", mid = "lightblue", midpoint = 0, limit = c(-1, 1), space = "Lab", name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(title = "Correlation Matrix Heatmap", x = "", y = "")
+
+```
+
+
+### models (continuous team_size with outliers)
+
+#### normalized
 
 ```{r}
 library(broom)
 
+# Filter out non-positive values and missing values
+user_commits_filtered1 <- user_commits_distinct %>%
+  filter(stargazer_count_normalized > 0, !is.na(stargazer_count_normalized),
+         fork_count_normalized > 0, !is.na(fork_count_normalized),
+         Downloads_Normalized > 0, !is.na(Downloads_Normalized),
+         reverse_dep_normalized > 0, !is.na(reverse_dep_normalized))
+
 # Perform linear regression and get summary and confidence intervals
-model_stargazer <- lm(stargazer_count_normalized ~ team_size, data = user_commits_distinct)
-model_fork <- lm(fork_count_normalized ~ team_size, data = user_commits_distinct)
-model_downloads <- lm(Downloads_Normalized ~ team_size, data = user_commits_distinct)
+model_stargazer <- lm(stargazer_count_normalized ~ team_size, data = user_commits_filtered1)
+model_fork <- lm(fork_count_normalized ~ team_size, data = user_commits_filtered1)
+model_downloads <- lm(log(Downloads_Normalized) ~ team_size, data = user_commits_filtered1)
+model_revdep <- lm(log(reverse_dep_normalized) ~ team_size, data = user_commits_filtered1)
 
 summary(model_stargazer)
 confint(model_stargazer)
@@ -1940,83 +2365,404 @@ confint(model_fork)
 summary(model_downloads)
 confint(model_downloads)
 
+summary(model_revdep)
+confint(model_revdep)
+
 # Tidy the models
 tidy_stargazer <- tidy(model_stargazer, conf.int = TRUE)
 tidy_fork <- tidy(model_fork, conf.int = TRUE)
 tidy_downloads <- tidy(model_downloads, conf.int = TRUE)
+tidy_revdep <- tidy(model_revdep, conf.int = TRUE)
 
 # Combine the tidied data
 tidy_combined <- bind_rows(
   tidy_stargazer %>% mutate(model = "Stargazer Count Normalized"),
   tidy_fork %>% mutate(model = "Fork Count Normalized"),
-  #tidy_downloads %>% mutate(model = "Downloads Normalized")
+  tidy_downloads %>% mutate(model = "Log Downloads Normalized"),
+  tidy_revdep %>% mutate(model = "Log Rev Dep Normalized")
 )
 
 # Filter out the intercept terms
 tidy_combined <- tidy_combined %>% filter(term == "team_size")
 
+# Determine y-axis limits to ensure visibility of confidence intervals
+y_limits <- range(tidy_combined$conf.low, tidy_combined$conf.high)
+
 # Create the plot
-ggplot(tidy_combined, aes(x = model, y = estimate, ymin = conf.low, ymax = conf.high)) +
-  geom_pointrange() +
+ggplot(tidy_combined, aes(x = model, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
   coord_flip() +
+  scale_y_continuous(limits = y_limits) + # Adjust the limits based on confidence intervals
   labs(title = "Confidence Intervals for Team Size Coefficients",
        x = "Model",
        y = "Coefficient Estimate") +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5), # Reduce title size
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "none"
+  ) +
+  scale_color_brewer(palette = "Set2")
 ```
 
-#### models (team_size_bin)
+#### non-normalized
 
 ```{r}
-user_commits_distinct$team_size_bin <- as.factor(user_commits_distinct$team_size_bin)
+# Filter out non-positive values and missing values
+user_commits_filtered2 <- user_commits_distinct %>%
+  filter(stargazer_count > 0, !is.na(stargazer_count),
+         fork_count > 0, !is.na(fork_count),
+         Downloads_All_Time > 0, !is.na(Downloads_All_Time),
+         Reverse_Depends_Count > 0, !is.na(Reverse_Depends_Count))
+
+# Perform linear regression and get summary and confidence intervals
+model_stargazer <- lm(stargazer_count ~ team_size, data = user_commits_filtered2)
+model_fork <- lm(fork_count ~ team_size, data = user_commits_filtered2)
+model_downloads <- lm(log(Downloads_All_Time) ~ team_size, data = user_commits_filtered2)
+model_revdep <- lm(log(Reverse_Depends_Count) ~ team_size, data = user_commits_filtered2)
+
+summary(model_stargazer)
+confint(model_stargazer)
+
+summary(model_fork)
+confint(model_fork)
+
+summary(model_downloads)
+confint(model_downloads)
+
+summary(model_revdep)
+confint(model_revdep)
+
+# Tidy the models
+tidy_stargazer <- tidy(model_stargazer, conf.int = TRUE)
+tidy_fork <- tidy(model_fork, conf.int = TRUE)
+tidy_downloads <- tidy(model_downloads, conf.int = TRUE)
+tidy_revdep <- tidy(model_revdep, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined <- bind_rows(
+  tidy_stargazer %>% mutate(model = "Stargazer Count"),
+  tidy_fork %>% mutate(model = "Fork Count"),
+  tidy_downloads %>% mutate(model = "Downloads"),
+  tidy_revdep %>% mutate(model = "Rev Dep")
+)
+
+# Filter out the intercept terms
+tidy_combined <- tidy_combined %>% filter(term == "team_size")
+
+# Determine y-axis limits to ensure visibility of confidence intervals
+y_limits <- range(tidy_combined$conf.low, tidy_combined$conf.high)
+
+# Create the plot
+ggplot(tidy_combined, aes(x = model, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  coord_flip() +
+  scale_y_continuous(limits = y_limits) + # Adjust the limits based on confidence intervals
+  labs(title = "Confidence Intervals for Team Size Coefficients",
+       x = "Model",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5), # Reduce title size
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "none"
+  ) +
+  scale_color_brewer(palette = "Set2")
+```
+
+### models (continuous team_size without outliers z-score)
+
+#### normalized
+
+```{r}
+# Filter out non-positive values and missing values
+user_commits_filtered3 <- user_commits_no_outliers_z %>%
+  filter(stargazer_count_normalized > 0, !is.na(stargazer_count_normalized),
+         fork_count_normalized > 0, !is.na(fork_count_normalized),
+         Downloads_Normalized > 0, !is.na(Downloads_Normalized),
+         reverse_dep_normalized > 0, !is.na(reverse_dep_normalized))
+
+# Perform linear regression and get summary and confidence intervals
+model_stargazer <- lm(stargazer_count_normalized ~ team_size, data = user_commits_filtered3)
+model_fork <- lm(fork_count_normalized ~ team_size, data = user_commits_filtered3)
+model_downloads <- lm(log(Downloads_Normalized) ~ team_size, data = user_commits_filtered3)
+model_revdep <- lm(log(reverse_dep_normalized) ~ team_size, data = user_commits_filtered3)
+
+summary(model_stargazer)
+confint(model_stargazer)
+
+summary(model_fork)
+confint(model_fork)
+
+summary(model_downloads)
+confint(model_downloads)
+
+summary(model_revdep)
+confint(model_revdep)
+
+# Tidy the models
+tidy_stargazer <- tidy(model_stargazer, conf.int = TRUE)
+tidy_fork <- tidy(model_fork, conf.int = TRUE)
+tidy_downloads <- tidy(model_downloads, conf.int = TRUE)
+tidy_revdep <- tidy(model_revdep, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined <- bind_rows(
+  tidy_stargazer %>% mutate(model = "Stargazer Count Normalized"),
+  tidy_fork %>% mutate(model = "Fork Count Normalized"),
+  tidy_downloads %>% mutate(model = "Log Downloads Normalized"),
+  tidy_revdep %>% mutate(model = "Log Rev Dep Normalized")
+)
+
+# Filter out the intercept terms
+tidy_combined <- tidy_combined %>% filter(term == "team_size")
+
+# Determine y-axis limits to ensure visibility of confidence intervals
+y_limits <- range(tidy_combined$conf.low, tidy_combined$conf.high)
+
+# Create the plot
+ggplot(tidy_combined, aes(x = model, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  coord_flip() +
+  scale_y_continuous(limits = y_limits) + # Adjust the limits based on confidence intervals
+  labs(title = "Confidence Intervals for Team Size Coefficients",
+       x = "Model",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5), # Reduce title size
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "none"
+  ) +
+  scale_color_brewer(palette = "Set2")
+```
+
+#### non-normalized
+
+```{r}
+# Filter out non-positive values and missing values
+user_commits_filtered4 <- user_commits_no_outliers_z %>%
+  filter(stargazer_count > 0, !is.na(stargazer_count),
+         fork_count > 0, !is.na(fork_count),
+         Downloads_All_Time > 0, !is.na(Downloads_All_Time),
+         Reverse_Depends_Count > 0, !is.na(Reverse_Depends_Count))
+
+# Perform linear regression and get summary and confidence intervals
+model_stargazer <- lm(stargazer_count ~ team_size, data = user_commits_filtered4)
+model_fork <- lm(fork_count ~ team_size, data = user_commits_filtered4)
+model_downloads <- lm(log(Downloads_All_Time) ~ team_size, data = user_commits_filtered4)
+model_revdep <- lm(log(Reverse_Depends_Count) ~ team_size, data = user_commits_filtered4)
+
+summary(model_stargazer)
+confint(model_stargazer)
+
+summary(model_fork)
+confint(model_fork)
+
+summary(model_downloads)
+confint(model_downloads)
+
+summary(model_revdep)
+confint(model_revdep)
+
+# Tidy the models
+tidy_stargazer <- tidy(model_stargazer, conf.int = TRUE)
+tidy_fork <- tidy(model_fork, conf.int = TRUE)
+tidy_downloads <- tidy(model_downloads, conf.int = TRUE)
+tidy_revdep <- tidy(model_revdep, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined <- bind_rows(
+  tidy_stargazer %>% mutate(model = "Stargazer Count"),
+  tidy_fork %>% mutate(model = "Fork Count"),
+  tidy_downloads %>% mutate(model = "Downloads"),
+  tidy_revdep %>% mutate(model = "Rev Dep")
+)
+
+# Filter out the intercept terms
+tidy_combined <- tidy_combined %>% filter(term == "team_size")
+
+# Determine y-axis limits to ensure visibility of confidence intervals
+y_limits <- range(tidy_combined$conf.low, tidy_combined$conf.high)
+
+# Create the plot
+ggplot(tidy_combined, aes(x = model, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  coord_flip() +
+  scale_y_continuous(limits = y_limits) + # Adjust the limits based on confidence intervals
+  labs(title = "Confidence Intervals for Team Size Coefficients",
+       x = "Model",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5), # Reduce title size
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "none"
+  ) +
+  scale_color_brewer(palette = "Set2")
+```
+
+### models (team_size_bin with outliers)
+
+#### normalized
+
+```{r}
+user_commits_filtered1$team_size_bin <- as.factor(user_commits_filtered1$team_size_bin)
 
 # Perform regression analysis using team_size_bin
-model_stargazer_bin <- lm(stargazer_count_normalized ~ team_size_bin, data = user_commits_distinct)
-model_fork_bin <- lm(fork_count_normalized ~ team_size_bin, data = user_commits_distinct)
-model_downloads_bin <- lm(Downloads_Normalized ~ team_size_bin, data = user_commits_distinct)
+model_stargazer_bin <- lm(stargazer_count_normalized ~ team_size_bin, data = user_commits_filtered1)
+model_fork_bin <- lm(fork_count_normalized ~ team_size_bin, data = user_commits_filtered1)
+model_downloads_bin <- lm(Downloads_Normalized ~ team_size_bin, data = user_commits_filtered1)
+model_revdep_bin <- lm(reverse_dep_normalized ~ team_size_bin, data = user_commits_filtered1)
 
-# Summary of the models
-summary(model_stargazer_bin)
-summary(model_fork_bin)
-summary(model_downloads_bin)
-
-# Confidence intervals for the models
-confint(model_stargazer_bin)
-confint(model_fork_bin)
-confint(model_downloads_bin)
-```
-
-
-
-```{r}
 # Tidy the models
 tidy_stargazer_bin <- tidy(model_stargazer_bin, conf.int = TRUE)
 tidy_fork_bin <- tidy(model_fork_bin, conf.int = TRUE)
 tidy_downloads_bin <- tidy(model_downloads_bin, conf.int = TRUE)
+tidy_revdep_bin <- tidy(model_revdep_bin, conf.int = TRUE)
 
 # Combine the tidied data
 tidy_combined_bin <- bind_rows(
   tidy_stargazer_bin %>% mutate(model = "Stargazer Count Normalized"),
   tidy_fork_bin %>% mutate(model = "Fork Count Normalized"),
-  #tidy_downloads_bin %>% mutate(model = "Downloads Normalized")
+  tidy_downloads_bin %>% mutate(model = "Downloads Normalized"),
+  tidy_revdep_bin %>% mutate(model = "Rev Dep Normalized")
 )
 
 # Filter out the intercept terms
 tidy_combined_bin <- tidy_combined_bin %>% filter(term != "(Intercept)")
 
 # Create the plot
-ggplot(tidy_combined_bin, aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high)) +
-  geom_pointrange() +
+ggplot(tidy_combined_bin, aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
   coord_flip() +
   facet_wrap(~ model, scales = "free_y") +
   labs(title = "Regression Coefficients for Team Size Bins",
        x = "Team Size Bin",
        y = "Coefficient Estimate") +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    strip.text = element_text(size = 12, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  ) +
+  scale_color_brewer(palette = "Set1")
+
+```
+
+
+```{r}
+ggplot(tidy_stargazer_bin %>% filter(term != "(Intercept)"), 
+       aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high)) +
+  geom_pointrange(size = 1.2, color = "darkblue") +
+  geom_point(size = 4, shape = 21, fill = "blue") +
+  coord_flip() +
+  labs(title = "Regression Coefficients for Team Size Bins (Stargazer Count Normalized)",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    panel.grid.major = element_line(color = "gray", size = 0.5),
+    panel.grid.minor = element_line(color = "lightgray", size = 0.25),
+    panel.background = element_rect(fill = "white", color = "black")
+  )
+
+
 ```
 
 ```{r}
+ggplot(tidy_fork_bin %>% filter(term != "(Intercept)"), 
+       aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high)) +
+  geom_pointrange(size = 1.2, color = "darkgreen") +
+  geom_point(size = 4, shape = 21, fill = "green") +
+  coord_flip() +
+  labs(title = "Regression Coefficients for Team Size Bins (Fork Count Normalized)",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    panel.grid.major = element_line(color = "gray", size = 0.5),
+    panel.grid.minor = element_line(color = "lightgray", size = 0.25),
+    panel.background = element_rect(fill = "white", color = "black")
+  )
 
+```
+
+
+```{r}
+ggplot(tidy_downloads_bin %>% filter(term != "(Intercept)"), 
+       aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high)) +
+  geom_pointrange(size = 1.2, color = "darkred") +
+  geom_point(size = 4, shape = 21, fill = "red") +
+  coord_flip() +
+  labs(title = "Regression Coefficients for Team Size Bins (Log Downloads Normalized)",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    panel.grid.major = element_line(color = "gray", size = 0.5),
+    panel.grid.minor = element_line(color = "lightgray", size = 0.25),
+    panel.background = element_rect(fill = "white", color = "black")
+  )
+
+```
+
+```{r}
+ggplot(tidy_revdep_bin %>% filter(term != "(Intercept)"), 
+       aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high)) +
+  geom_pointrange(size = 1.2, color = "darkred") +
+  geom_point(size = 4, shape = 21, fill = "red") +
+  coord_flip() +
+  labs(title = "Regression Coefficients for Team Size Bins (Log revdep Normalized)",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    panel.grid.major = element_line(color = "gray", size = 0.5),
+    panel.grid.minor = element_line(color = "lightgray", size = 0.25),
+    panel.background = element_rect(fill = "white", color = "black")
+  )
+
+```
+
+```{r}
 library(multcomp)
 
 # Perform Tukey's HSD test
@@ -2026,9 +2772,279 @@ tukey_test <- glht(model_stargazer_bin, linfct = mcp(team_size_bin = "Tukey"))
 summary(tukey_test)
 ```
 
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_fork_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
 
 ```{r}
-# Summary of the test results with Bonferroni adjustment
-summary(tukey_test, test = adjusted("bonferroni"))
+# Perform Tukey's HSD test
+tukey_test <- glht(model_revdep_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_downloads_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+#### nonnormalzied
+
+```{r}
+user_commits_filtered2$team_size_bin <- as.factor(user_commits_filtered2$team_size_bin)
+
+# Perform regression analysis using team_size_bin
+model_stargazer_bin <- lm(stargazer_count ~ team_size_bin, data = user_commits_filtered2)
+model_fork_bin <- lm(fork_count ~ team_size_bin, data = user_commits_filtered2)
+model_downloads_bin <- lm(Downloads_All_Time ~ team_size_bin, data = user_commits_filtered2)
+model_revdep_bin <- lm(Reverse_Depends_Count ~ team_size_bin, data = user_commits_filtered2)
+
+# Tidy the models
+tidy_stargazer_bin <- tidy(model_stargazer_bin, conf.int = TRUE)
+tidy_fork_bin <- tidy(model_fork_bin, conf.int = TRUE)
+tidy_downloads_bin <- tidy(model_downloads_bin, conf.int = TRUE)
+tidy_revdep_bin <- tidy(model_revdep_bin, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined_bin <- bind_rows(
+  tidy_stargazer_bin %>% mutate(model = "Stargazer Count"),
+  tidy_fork_bin %>% mutate(model = "Fork Count"),
+  tidy_downloads_bin %>% mutate(model = "Downloads"),
+  tidy_revdep_bin %>% mutate(model = "Rev Dep")
+)
+
+# Filter out the intercept terms
+tidy_combined_bin <- tidy_combined_bin %>% filter(term != "(Intercept)")
+
+# Create the plot
+ggplot(tidy_combined_bin, aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  coord_flip() +
+  facet_wrap(~ model, scales = "free_y") +
+  labs(title = "Regression Coefficients for Team Size Bins",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    strip.text = element_text(size = 12, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  ) +
+  scale_color_brewer(palette = "Set1")
+
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_stargazer_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_fork_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_revdep_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_downloads_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+### models (team_size_bin with no outliers z-score)
+
+#### normalized
+
+```{r}
+user_commits_filtered3$team_size_bin <- as.factor(user_commits_filtered3$team_size_bin)
+
+# Perform regression analysis using team_size_bin
+model_stargazer_bin <- lm(stargazer_count_normalized ~ team_size_bin, data = user_commits_filtered3)
+model_fork_bin <- lm(fork_count_normalized ~ team_size_bin, data = user_commits_filtered3)
+model_downloads_bin <- lm(Downloads_Normalized ~ team_size_bin, data = user_commits_filtered3)
+model_revdep_bin <- lm(reverse_dep_normalized ~ team_size_bin, data = user_commits_filtered3)
+
+# Tidy the models
+tidy_stargazer_bin <- tidy(model_stargazer_bin, conf.int = TRUE)
+tidy_fork_bin <- tidy(model_fork_bin, conf.int = TRUE)
+tidy_downloads_bin <- tidy(model_downloads_bin, conf.int = TRUE)
+tidy_revdep_bin <- tidy(model_revdep_bin, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined_bin <- bind_rows(
+  tidy_stargazer_bin %>% mutate(model = "Stargazer Count Normalized"),
+  tidy_fork_bin %>% mutate(model = "Fork Count Normalized"),
+  tidy_downloads_bin %>% mutate(model = "Downloads Normalized"),
+  tidy_revdep_bin %>% mutate(model = "Rev Dep Normalized")
+)
+
+# Filter out the intercept terms
+tidy_combined_bin <- tidy_combined_bin %>% filter(term != "(Intercept)")
+
+# Create the plot
+ggplot(tidy_combined_bin, aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  coord_flip() +
+  facet_wrap(~ model, scales = "free_y") +
+  labs(title = "Regression Coefficients for Team Size Bins",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    strip.text = element_text(size = 12, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  ) +
+  scale_color_brewer(palette = "Set1")
+
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_stargazer_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_fork_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_revdep_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_downloads_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+#### nonnormalzied
+
+```{r}
+user_commits_filtered4$team_size_bin <- as.factor(user_commits_filtered4$team_size_bin)
+
+# Perform regression analysis using team_size_bin
+model_stargazer_bin <- lm(stargazer_count ~ team_size_bin, data = user_commits_filtered4)
+model_fork_bin <- lm(fork_count ~ team_size_bin, data = user_commits_filtered4)
+model_downloads_bin <- lm(Downloads_All_Time ~ team_size_bin, data = user_commits_filtered4)
+model_revdep_bin <- lm(Reverse_Depends_Count ~ team_size_bin, data = user_commits_filtered4)
+
+# Tidy the models
+tidy_stargazer_bin <- tidy(model_stargazer_bin, conf.int = TRUE)
+tidy_fork_bin <- tidy(model_fork_bin, conf.int = TRUE)
+tidy_downloads_bin <- tidy(model_downloads_bin, conf.int = TRUE)
+tidy_revdep_bin <- tidy(model_revdep_bin, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined_bin <- bind_rows(
+  tidy_stargazer_bin %>% mutate(model = "Stargazer Count"),
+  tidy_fork_bin %>% mutate(model = "Fork Count"),
+  tidy_downloads_bin %>% mutate(model = "Downloads"),
+  tidy_revdep_bin %>% mutate(model = "Rev Dep")
+)
+
+# Filter out the intercept terms
+tidy_combined_bin <- tidy_combined_bin %>% filter(term != "(Intercept)")
+
+# Create the plot
+ggplot(tidy_combined_bin, aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  coord_flip() +
+  facet_wrap(~ model, scales = "free_y") +
+  labs(title = "Regression Coefficients for Team Size Bins",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    strip.text = element_text(size = 12, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  ) +
+  scale_color_brewer(palette = "Set1")
+
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_stargazer_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_fork_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_revdep_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_downloads_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
 ```
 
