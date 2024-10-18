@@ -19,7 +19,7 @@ editor:
 
 In this Quarto document, we present the code that was used to prepare Python data from our database into a single data frame to be used for analysis. The final Python data frame is at the user level, and contains no information for maintainer level analysis. 
 
-```{r, message=FALSE}
+```{r, message=FALSE, eval=FALSE}
 library(tidyverse)
 library(RMySQL)
 library(ggwes)
@@ -190,7 +190,7 @@ python_commits_total <- python_commits_total %>%
 python_commits_total$country_fixed <- gsub("^Jersey, United States$|^United States, Jersey$", "United States", python_commits_total$country_fixed)
 
 
-### replace NA, blank, or charcter NA with Unknown
+### replace NA, blank, or character NA with Unknown
 
 # Replace NA values, "NA" strings, and blanks with "Unknown"
 python_commits_total$country_fixed <- ifelse(is.na(python_commits_total$country_fixed) | 
