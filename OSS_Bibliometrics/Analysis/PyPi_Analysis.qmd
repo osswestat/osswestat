@@ -27,6 +27,9 @@ library(knitr)
 library(kableExtra)
 library(pander)
 library(ggthemes)
+library(pbapply)
+library(purrr)
+library(stringr)
 ```
 
 # File List
@@ -35,7 +38,11 @@ library(ggthemes)
 
 ```{r}
 python_final <- read.csv("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\python_final.csv") %>%
-            select(-X)
+            dplyr::select(-X)
+
+python_revdep <- read.csv("\\\\westat.com\\DFS\\DVSTAT\\Individual Directories\\Askew\\Paper_Data\\pypi_package_n_reverse_dependencies.csv") %>%
+  rename(Package = package,
+         Reverse_Depends_Count = reverse_dependencies)
 ```
 
 
@@ -213,18 +220,6 @@ ggplot(sector_aggregated_additions %>% filter(Sector != "Unknown"), aes(x = Sect
 #### Sectors Over time
 
 ```{r}
-# Assuming 'python_final' has the necessary data including 'year_created', 'sector', and 'total_additions'
-
-# Calculate the total code additions for each slug and year
-slug_totals <-python_final %>%
-  group_by(slug, year_created) %>%
-  summarise(total_code_for_slug = sum(total_additions), .groups = 'drop')
-
-# Compute the contribution fraction for each user by year
-python_final <-python_final %>%
-  left_join(slug_totals, by = c("slug", "year_created")) %>%
-  mutate(contribution_fraction_loc = total_additions / total_code_for_slug)
-
 # Compute the total contribution fraction for each combination of slug, sector, and year
 sector_addition_contribution <-python_final %>%
   group_by(slug, Sector, year_created) %>%
@@ -615,7 +610,7 @@ org_aggregated = org_aggregated %>%
 org_aggregated$percentage_label <- scales::percent(org_aggregated$percentage_contribution / 100)
 ```
 
-Again, the equal percentage contribution to Unknown is 91.2% just like we saw in the sector contribution section. Of the percentage we do know, NetEase leads with 7.2% followed by Google with 5.6%
+Again, the equal percentage contribution to Unknown is 91.2% just like we saw in the sector contribution section. Of the percentage we do know, NetEase leads with 5.6% followed by Google with 5.4%
 
 ```{r}
 total_excluding_unknown <- sum(org_aggregated$overall_contribution_fraction[org_aggregated$Institution != "Unknown"])
@@ -694,104 +689,6 @@ ggplot(top_10_orgs_additions, aes(x = reorder(Institution, percentage_contributi
   theme(plot.title = element_text(size = 7))+
   labs(caption = "*Excludes the percentage contribution from unknown (90.6%)")
 ```
-
-## Dependencies Per Package
-
-```{r}
-python_final_distinct <- python_final %>%
-                            distinct(Package, .keep_all = T)
-
-library(pbapply)
-library(purrr)
-library(dplyr)
-library(stringr)
-
-Count_Data <- pblapply(seq_len(nrow(python_final_distinct)), function(.x) {
-  python_final_distinct[.x, ] %>%
-    select(Package, dependencies) %>%
-    map_df(function(.y) ifelse(is.na(.y) | .y == "", 0, length(str_split(.y, ",")[[1]]))) %>%
-    mutate(Package = python_final_distinct$Package[.x])
-}, cl = 1) %>%
-  bind_rows() %>%
-  select(Package, dependencies)
-```
-```{r}
-colnames(Count_Data) <- c("Package", "Depends_Count")
-
-Count_Data <- Count_Data %>%
-                select(Package, Depends_Count)
-
-### Creating categories for dependency counts
-
-Count_Data <- Count_Data %>%
-          mutate(Depends_Cat = case_when(Depends_Count == 0 ~ "0",
-                                         Depends_Count  == 1 | Depends_Count == 2 ~ "1-2",
-                                         Depends_Count  > 2 & Depends_Count < 7 ~ "3-6",
-                                         Depends_Count  > 6 & Depends_Count < 16 ~ "7-15",
-                                         Depends_Count > 15 ~ "16+"))
-## converting to factor
-Count_Data$Depends_Cat <- as.factor(Count_Data$Depends_Cat)
-
-# Getting counts per category 
-table(Count_Data$Depends_Cat)
-```
-
-
-```{r}
-### Creating inputs for tree map plot
-
-Dependencies <- c("0: 51%", "1-2: 19%", "3-6: 17%", "7-15: 9%", "16+: 4%")
-
-Value <- c(26, 52, 10, 8, 4)
-
-Label <- c("0 Dep: 51%", "1-2 Dep: 19%", "3-6 Dep: 17%", "7-15 Dep: 9%", "16+ Dep: 4%")
-
-Depends_Tree <- cbind(Dependencies, Value, Label)
-
-Depends_Tree <- as.data.frameR_Depends_Tree)
-
-Depends_Tree$Value <- as.numericR_Depends_Tree$Value)
-
-### Generating tree map plot
-
-ggplot(Depends_Tree, aes(area = Value, fill = Dependencies, label = Label)) +
-  geom_treemap() +
-  geom_treemap_text(colour = "black",
-                    place = "centre",
-                    size = 15)+
-  ggtitle("Number of Dependencies Per Package (Python)")+
-  scale_fill_westat(option = "BLUES", breaks = c("0: 51%", "1-2: 19%", "3-6: 17%", "7-15: 9%", "16+: 4%"))+
-  theme_tufte()+
-  theme(legend.position = "right")
-```
-
-```{r}
-Rev_Dep <- c("0: 86%", "1-3: 11%", "4-10: 2%", "11+: 1%")
-
-Value <- c(76, 11, 3, 2)
-
-Label <- c("0: 86%", "1-3: 11%", "4-10: 2%", "11+: 1%")
-
-R_Depends_Tree <- cbind(Rev_Dep, Value, Label)
-
-R_Depends_Tree <- as.data.frame(R_Depends_Tree)
-
-R_Depends_Tree$Value <- as.numeric(R_Depends_Tree$Value)
-
-### Generating tree map plot
-
-ggplot(R_Depends_Tree, aes(area = Value, fill = Rev_Dep, label = Label)) +
-  geom_treemap() +
-  geom_treemap_text(colour = "black",
-                    place = "centre",
-                    size = 15)+
-  ggtitle("Number of Reverse Dependencies Per Package (Python)")+
-  scale_fill_westat(option = "BLUES", breaks = c("0: 86%", "1-3: 11%", "4-10: 2%", "11+: 1%"))+
-  theme_tufte()+
-  theme(legend.position = "right")
-```
-
-
 
 ## Network Analysis
 
@@ -1142,12 +1039,7 @@ citations_by_country %>%
   arrange(desc(Percentage_of_Citations))
 ```
 
-
-```{r}
-citations_by_country %>%
-  arrange(desc(Percentage_of_Citations))
-```
-
+The following graph shows a countries' lines of code credit compared to the percentage of citations they have from other countries (or reverse dependencies in package language)
 
 ```{r}
 data <- data.frame(
@@ -1194,39 +1086,979 @@ plot
 
 ```
 
+The following code is some analysis for a working paper... results are not commented on at the moment, but we want to see if larger teams have more impact on average.
+
+## How does team size relate to impact?
+
 ```{r}
-### python_dependencies <- python_dependencies %>%
-                         ##filter(dependencies != "")
+## Create team size
+python_final <- python_final %>%
+  group_by(slug) %>%
+  mutate(team_size = n()) %>%
+  ungroup()
 
-# 1. Split the dependencies into a list
-### python_dependencies$dependencies <- strsplit(as.character(python_dependencies$dependencies), ",\\s*")
+python_final <- python_final %>%
+                              left_join(python_revdep, by = "Package")
 
-# 2. Unlist dependencies
+## normalize stars and forks based on year_created 
 
-## dependencies_expanded <- setNames(stack(setNames(python_dependencies$dependencies, python_dependencies$Package)), c("Package", "Reverse_Dependency"))
+python_final <- python_final %>%
+  mutate(year_created = as.numeric(year_created))
 
-# 3. Sorting the dependencies_expanded data frame by the Package column
-## dependencies_expanded <- dependencies_expanded[order(dependencies_expanded$Package), ]
+python_final <- python_final %>%
+  mutate(
+    normalization_factor = ifelse(is.na(year_created), NA, 2023 - year_created + 1),
+    stargazerCount_normalized = ifelse(is.na(stargazerCount) | is.na(normalization_factor), stargazerCount, stargazerCount / normalization_factor),
+    forkCount_normalized = ifelse(is.na(forkCount) | is.na(normalization_factor), forkCount, forkCount / normalization_factor),
+    RevDepCount_normalized = ifelse(is.na(Reverse_Depends_Count) | is.na(normalization_factor), Reverse_Depends_Count, Reverse_Depends_Count / normalization_factor)
+  ) 
 
-## dependencies_expanded <- dependencies_expanded %>%
-                             ## filter(Package != "")
-
-### python_packages <- python_final$Package
-
-### dependencies_filtered <- dependencies_expanded %>%
-                            ## filter(Package %in% python_packages)
-
-# 4. aggregate reverse dependency information
-
-# Convert to data.table
-### setDT(dependencies_filtered)
-
-# Initialize progress bar
-## pb <- progress_bar$new(total = nrow(dependencies_filtered), clear = FALSE, format = "  :bar :percent")
-
-######## Custom aggregation with progress bar update
-## aggregated_data <- dependencies_filtered[, {
-##   pb$tick()  # Update progress bar
- ##   .(Reverse_Dependency = paste(unique(Reverse_Dependency), collapse = ", "))
-## }, by = .(Package)]
 ```
+
+
+### Bin teamsize
+
+#### With Outliers
+
+```{r}
+python_final_distinct <- python_final %>%
+  distinct(slug, .keep_all = TRUE)
+
+quantile(python_final_distinct$team_size, probs = seq(0, 1, .1))
+
+# Define the bins based on the updated percentiles
+
+# Define the bins based on the updated percentiles
+bins <- c(1, 2, 3, 5, 10, 3348)
+
+# Create labels for the bins
+bin_labels <- c("[1]", "[2]", "[3-4]", "[5-9]", "[10-3348]")
+
+# Create a new column with binned team sizes and custom labels
+python_final_distinct <- python_final_distinct %>%
+  mutate(team_size_bin = cut(team_size, breaks = bins, labels = bin_labels, include.lowest = TRUE, right = FALSE))
+
+table(python_final_distinct$team_size_bin)
+
+mean(python_final_distinct$team_size)
+```
+
+#### no outliers (z-score)
+
+```{r}
+# Calculate the mean and standard deviation of team_size
+mean_team_size <- mean(python_final_distinct$team_size)
+sd_team_size <- sd(python_final_distinct$team_size)
+
+# Calculate Z-scores
+python_final_distinct <- python_final_distinct %>%
+  mutate(z_score = (team_size - mean_team_size) / sd_team_size)
+
+# Define a threshold for Z-scores (commonly 3 or 2.5)
+z_threshold <- 3
+
+# Filter out outliers based on Z-score
+python_final_distinct_z <- python_final_distinct %>%
+  filter(abs(z_score) <= z_threshold)
+
+quantile(python_final_distinct_z$team_size, probs = seq(0, 1, .1))
+
+# Define the bins based on the updated percentiles
+bins_no_outliers_z <- c(1, 2, 3, 5, 9, 100)
+
+# Create labels for the bins
+bin_labels_no_outliers_z <- c("[1]", "[2]", "[3-4]", "[5-8]", "[9-100]")
+
+# Create a new column with binned team sizes and custom labels
+python_final_distinct_z <- python_final_distinct_z %>%
+  mutate(team_size_bin = cut(team_size, breaks = bins_no_outliers_z , labels = bin_labels_no_outliers_z, include.lowest = TRUE, right = FALSE))
+
+# View the table of binned team sizes
+table(python_final_distinct_z$team_size_bin)
+
+```
+
+### boxplot viz (with outliers)
+
+#### normalized
+
+```{r}
+# Define a custom theme
+custom_theme <- theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+
+# Plot stargazerCount_normalized vs. team_size_bin
+ggplot(python_final_distinct, aes(x = team_size_bin, y = log(stargazerCount_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_westat(option = "BLUES", drop = FALSE) +
+  labs(x = "Team Size Bin", y = "Log Stargazer Count Normalized", fill = "Team Size") +
+  custom_theme
+
+# Plot forkCount_normalized vs. team_size_bin
+ggplot(python_final_distinct, aes(x = team_size_bin, y = log(forkCount_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Log Fork Count Normalized", fill = "Team Size") +
+  custom_theme
+
+
+# Plot RevDepCount vs. team_size_bin
+ggplot(python_final_distinct, aes(x = team_size_bin, y = log(RevDepCount_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Log Reverse Depends Normalized", fill = "Team Size") +
+  custom_theme
+```
+
+#### non_normalized
+
+```{r}
+# Define a custom theme
+custom_theme <- theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+
+# Plot stargazerCount_normalized vs. team_size_bin
+ggplot(python_final_distinct, aes(x = team_size_bin, y = log(stargazerCount), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_westat(option = "BLUES", drop = FALSE) +
+  labs(x = "Team Size Bin", y = "Log Stargazer Count", fill = "Team Size") +
+  custom_theme
+
+# Plot forkCount_normalized vs. team_size_bin
+ggplot(python_final_distinct, aes(x = team_size_bin, y = log(forkCount), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Log Fork Count", fill = "Team Size") +
+  custom_theme
+
+
+# Plot RevDepCount vs. team_size_bin
+ggplot(python_final_distinct, aes(x = team_size_bin, y = log(Reverse_Depends_Count), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Log Reverse Depends Count", fill = "Team Size") +
+  custom_theme
+```
+
+
+### boxplot viz (no outliers)
+
+#### normalized 
+
+```{r}
+# Define a custom theme
+custom_theme <- theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+
+# Plot stargazerCount_normalized vs. team_size_bin
+ggplot(python_final_distinct_z, aes(x = team_size_bin, y = log(stargazerCount_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_westat(option = "BLUES", drop = FALSE) +
+  labs(x = "Team Size Bin", y = "Log Stargazer Count Normalized", fill = "Team Size") +
+  custom_theme
+
+# Plot forkCount_normalized vs. team_size_bin
+ggplot(python_final_distinct_z, aes(x = team_size_bin, y = log(forkCount_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Log Fork Count Normalized", fill = "Team Size") +
+  custom_theme
+
+# Plot RevDepCount vs. team_size_bin
+ggplot(python_final_distinct_z, aes(x = team_size_bin, y = log(RevDepCount_normalized), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Log Reverse Depends Count Normalized", fill = "Team Size") +
+  custom_theme
+
+```
+
+#### non-normalized
+
+```{r}
+# Define a custom theme
+custom_theme <- theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 11),
+    axis.text.y = element_text(size = 11),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+
+# Plot stargazerCount_normalized vs. team_size_bin
+ggplot(python_final_distinct_z, aes(x = team_size_bin, y = log(stargazerCount), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_westat(option = "BLUES", drop = FALSE) +
+  labs(x = "Team Size Bin", y = "Log Stargazer Count Normalized", fill = "Team Size") +
+  custom_theme
+
+# Plot forkCount_normalized vs. team_size_bin
+ggplot(python_final_distinct_z, aes(x = team_size_bin, y = log(forkCount), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Log Fork Count Normalized", fill = "Team Size") +
+  custom_theme
+
+# Plot RevDepCount vs. team_size_bin
+ggplot(python_final_distinct_z, aes(x = team_size_bin, y = log(Reverse_Depends_Count), fill = team_size_bin)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 21, outlier.size = 3) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Team Size Bin", y = "Log Reverse Depends Count Normalized", fill = "Team Size") +
+  custom_theme
+```
+
+### correlation viz (with outliers)
+
+#### normalized
+
+```{r}
+# Calculate correlation between team_size and the normalized counts
+correlation_matrix <- python_final_distinct %>%
+  select(team_size, forkCount_normalized, stargazerCount_normalized, RevDepCount_normalized) %>%
+  cor(use = "complete.obs")
+
+# View the correlation matrix
+print(correlation_matrix)
+```
+
+```{r}
+library(reshape2)
+# Melt the correlation matrix
+melted_correlation_matrix <- melt(correlation_matrix)
+
+ggplot(data = melted_correlation_matrix, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2)), color = "black") +
+  scale_fill_gradient2(low = "blue", high = "darkblue", mid = "lightblue", midpoint = 0, limit = c(-1, 1), space = "Lab", name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(title = "Correlation Matrix Heatmap", x = "", y = "")
+
+```
+
+#### non-normalized
+
+```{r}
+# Calculate correlation between team_size and the normalized counts
+correlation_matrix <- python_final_distinct %>%
+  select(team_size, forkCount, stargazerCount, Reverse_Depends_Count) %>%
+  cor(use = "complete.obs")
+
+# View the correlation matrix
+print(correlation_matrix)
+```
+
+```{r}
+# Melt the correlation matrix
+melted_correlation_matrix <- melt(correlation_matrix)
+
+ggplot(data = melted_correlation_matrix, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2)), color = "black") +
+  scale_fill_gradient2(low = "blue", high = "darkblue", mid = "lightblue", midpoint = 0, limit = c(-1, 1), space = "Lab", name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(title = "Correlation Matrix Heatmap", x = "", y = "")
+
+```
+
+### correlation viz (no outliers)
+
+#### normalized
+
+```{r}
+# Calculate correlation between team_size and the normalized counts
+correlation_matrix <- python_final_distinct_z %>%
+  select(team_size, forkCount_normalized, stargazerCount_normalized, RevDepCount_normalized) %>%
+  cor(use = "complete.obs")
+
+# View the correlation matrix
+print(correlation_matrix)
+```
+
+```{r}
+
+# Melt the correlation matrix
+melted_correlation_matrix <- melt(correlation_matrix)
+
+ggplot(data = melted_correlation_matrix, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2)), color = "black") +
+  scale_fill_gradient2(low = "blue", high = "darkblue", mid = "lightblue", midpoint = 0, limit = c(-1, 1), space = "Lab", name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(title = "Correlation Matrix Heatmap", x = "", y = "")
+
+```
+
+#### non-normalized
+
+```{r}
+# Calculate correlation between team_size and the normalized counts
+correlation_matrix <- python_final_distinct_z %>%
+  select(team_size, forkCount, stargazerCount, Reverse_Depends_Count) %>%
+  cor(use = "complete.obs")
+
+# View the correlation matrix
+print(correlation_matrix)
+```
+
+```{r}
+# Melt the correlation matrix
+melted_correlation_matrix <- melt(correlation_matrix)
+
+ggplot(data = melted_correlation_matrix, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2)), color = "black") +
+  scale_fill_gradient2(low = "blue", high = "darkblue", mid = "lightblue", midpoint = 0, limit = c(-1, 1), space = "Lab", name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(title = "Correlation Matrix Heatmap", x = "", y = "")
+
+```
+
+### models (continuous team_size w/ outliers)
+
+#### normalized
+
+```{r}
+library(broom)
+
+# Filter out non-positive values and missing values
+python_final_filtered1 <- python_final_distinct %>%
+  filter(stargazerCount_normalized > 0, !is.na(stargazerCount_normalized),
+         forkCount_normalized > 0, !is.na(forkCount_normalized),
+         RevDepCount_normalized > 0, !is.na(RevDepCount_normalized))
+
+# Perform linear regression and get summary and confidence intervals
+model_stargazer <- lm(stargazerCount_normalized ~ team_size, data = python_final_filtered1)
+model_fork <- lm(forkCount_normalized ~ team_size, data = python_final_filtered1)
+model_revdep <- lm(RevDepCount_normalized ~ team_size, data = python_final_filtered1)
+
+summary(model_stargazer)
+confint(model_stargazer)
+
+summary(model_fork)
+confint(model_fork)
+
+summary(model_revdep)
+confint(model_revdep)
+
+# Tidy the models
+tidy_stargazer <- tidy(model_stargazer, conf.int = TRUE)
+tidy_fork <- tidy(model_fork, conf.int = TRUE)
+tidy_revdep <- tidy(model_revdep, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined <- bind_rows(
+  tidy_stargazer %>% mutate(model = "Stargazer Count Normalized"),
+  tidy_fork %>% mutate(model = "Fork Count Normalized"),
+  tidy_revdep %>% mutate(model = "Rev Dep Count Normalized")
+)
+
+# Filter out the intercept terms
+tidy_combined <- tidy_combined %>% filter(term == "team_size")
+
+# Determine y-axis limits to ensure visibility of confidence intervals
+y_limits <- range(tidy_combined$conf.low, tidy_combined$conf.high)
+
+# Create the plot
+ggplot(tidy_combined, aes(x = model, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  coord_flip() +
+  scale_y_continuous(limits = y_limits) + # Adjust the limits based on confidence intervals
+  labs(title = "Confidence Intervals for Team Size Coefficients",
+       x = "Model",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5), # Reduce title size
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "none"
+  ) +
+  scale_color_brewer(palette = "Set2")
+```
+
+#### non-normalized
+
+```{r}
+# Filter out non-positive values and missing values
+python_final_filtered2 <- python_final_distinct %>%
+  filter(stargazerCount > 0, !is.na(stargazerCount),
+         forkCount > 0, !is.na(forkCount),
+         Reverse_Depends_Count > 0, !is.na(Reverse_Depends_Count))
+
+# Perform linear regression and get summary and confidence intervals
+model_stargazer <- lm(stargazerCount ~ team_size, data = python_final_filtered2)
+model_fork <- lm(forkCount ~ team_size, data = python_final_filtered2)
+model_revdep <- lm(Reverse_Depends_Count ~ team_size, data = python_final_filtered2)
+
+summary(model_stargazer)
+confint(model_stargazer)
+
+summary(model_fork)
+confint(model_fork)
+
+summary(model_revdep)
+confint(model_revdep)
+
+# Tidy the models
+tidy_stargazer <- tidy(model_stargazer, conf.int = TRUE)
+tidy_fork <- tidy(model_fork, conf.int = TRUE)
+tidy_revdep <- tidy(model_revdep, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined <- bind_rows(
+  tidy_stargazer %>% mutate(model = "Stargazer Count"),
+  tidy_fork %>% mutate(model = "Fork Count"),
+  tidy_revdep %>% mutate(model = "Rev Dep Count")
+)
+
+# Filter out the intercept terms
+tidy_combined <- tidy_combined %>% filter(term == "team_size")
+
+# Determine y-axis limits to ensure visibility of confidence intervals
+y_limits <- range(tidy_combined$conf.low, tidy_combined$conf.high)
+
+# Create the plot
+ggplot(tidy_combined, aes(x = model, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  coord_flip() +
+  scale_y_continuous(limits = y_limits) + # Adjust the limits based on confidence intervals
+  labs(title = "Confidence Intervals for Team Size Coefficients",
+       x = "Model",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5), # Reduce title size
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "none"
+  ) +
+  scale_color_brewer(palette = "Set2")
+```
+
+### models (continuous team_size w/o outliers)
+
+#### normalized
+
+```{r}
+
+# Filter out non-positive values and missing values
+python_final_filtered3 <- python_final_distinct_z %>%
+  filter(stargazerCount_normalized > 0, !is.na(stargazerCount_normalized),
+         forkCount_normalized > 0, !is.na(forkCount_normalized),
+         RevDepCount_normalized > 0, !is.na(RevDepCount_normalized))
+
+# Perform linear regression and get summary and confidence intervals
+model_stargazer <- lm(stargazerCount_normalized ~ team_size, data = python_final_filtered3)
+model_fork <- lm(forkCount_normalized ~ team_size, data = python_final_filtered3)
+model_revdep <- lm(RevDepCount_normalized ~ team_size, data = python_final_filtered3)
+
+summary(model_stargazer)
+confint(model_stargazer)
+
+summary(model_fork)
+confint(model_fork)
+
+summary(model_revdep)
+confint(model_revdep)
+
+# Tidy the models
+tidy_stargazer <- tidy(model_stargazer, conf.int = TRUE)
+tidy_fork <- tidy(model_fork, conf.int = TRUE)
+tidy_revdep <- tidy(model_revdep, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined <- bind_rows(
+  tidy_stargazer %>% mutate(model = "Stargazer Count Normalized"),
+  tidy_fork %>% mutate(model = "Fork Count Normalized"),
+  tidy_revdep %>% mutate(model = "Rev Dep Count Normalized")
+)
+
+# Filter out the intercept terms
+tidy_combined <- tidy_combined %>% filter(term == "team_size")
+
+# Determine y-axis limits to ensure visibility of confidence intervals
+y_limits <- range(tidy_combined$conf.low, tidy_combined$conf.high)
+
+# Create the plot
+ggplot(tidy_combined, aes(x = model, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  coord_flip() +
+  scale_y_continuous(limits = y_limits) + # Adjust the limits based on confidence intervals
+  labs(title = "Confidence Intervals for Team Size Coefficients",
+       x = "Model",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5), # Reduce title size
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "none"
+  ) +
+  scale_color_brewer(palette = "Set2")
+```
+
+#### non-normalized
+
+```{r}
+# Filter out non-positive values and missing values
+python_final_filtered4 <- python_final_distinct_z %>%
+  filter(stargazerCount > 0, !is.na(stargazerCount),
+         forkCount > 0, !is.na(forkCount),
+         Reverse_Depends_Count > 0, !is.na(Reverse_Depends_Count))
+
+# Perform linear regression and get summary and confidence intervals
+model_stargazer <- lm(stargazerCount ~ team_size, data = python_final_filtered4)
+model_fork <- lm(forkCount ~ team_size, data = python_final_filtered4)
+model_revdep <- lm(Reverse_Depends_Count ~ team_size, data = python_final_filtered4)
+
+summary(model_stargazer)
+confint(model_stargazer)
+
+summary(model_fork)
+confint(model_fork)
+
+summary(model_revdep)
+confint(model_revdep)
+
+# Tidy the models
+tidy_stargazer <- tidy(model_stargazer, conf.int = TRUE)
+tidy_fork <- tidy(model_fork, conf.int = TRUE)
+tidy_revdep <- tidy(model_revdep, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined <- bind_rows(
+  tidy_stargazer %>% mutate(model = "Stargazer Count"),
+  tidy_fork %>% mutate(model = "Fork Count"),
+  tidy_revdep %>% mutate(model = "Rev Dep Count")
+)
+
+# Filter out the intercept terms
+tidy_combined <- tidy_combined %>% filter(term == "team_size")
+
+# Determine y-axis limits to ensure visibility of confidence intervals
+y_limits <- range(tidy_combined$conf.low, tidy_combined$conf.high)
+
+# Create the plot
+ggplot(tidy_combined, aes(x = model, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  coord_flip() +
+  scale_y_continuous(limits = y_limits) + # Adjust the limits based on confidence intervals
+  labs(title = "Confidence Intervals for Team Size Coefficients",
+       x = "Model",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5), # Reduce title size
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "none"
+  ) +
+  scale_color_brewer(palette = "Set2")
+```
+
+### models (team_size_bin w/ outliers)
+
+
+#### normalized
+
+```{r}
+python_final_filtered1$team_size_bin <- as.factor(python_final_filtered1$team_size_bin)
+
+# Perform regression analysis using team_size_bin
+model_stargazer_bin <- lm(stargazerCount_normalized ~ team_size_bin, data = python_final_filtered1)
+model_fork_bin <- lm(forkCount_normalized ~ team_size_bin, data = python_final_filtered1)
+model_revdep_bin <- lm(RevDepCount_normalized ~ team_size_bin, data = python_final_filtered1)
+
+# Tidy the models
+tidy_stargazer_bin <- tidy(model_stargazer_bin, conf.int = TRUE)
+tidy_fork_bin <- tidy(model_fork_bin, conf.int = TRUE)
+tidy_revdep_bin <- tidy(model_revdep_bin, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined_bin <- bind_rows(
+  tidy_stargazer_bin %>% mutate(model = "Stargazer Count Normalized"),
+  tidy_fork_bin %>% mutate(model = "Fork Count Normalized"),
+  tidy_revdep_bin %>% mutate(model = "Rev Dep Normalized")
+)
+
+# Filter out the intercept terms
+tidy_combined_bin <- tidy_combined_bin %>% filter(term != "(Intercept)")
+
+# Create the plot
+ggplot(tidy_combined_bin, aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  coord_flip() +
+  facet_wrap(~ model, scales = "free_y") +
+  labs(title = "Regression Coefficients for Team Size Bins",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 10, face = "bold"),
+    axis.title.y = element_text(size = 10, face = "bold"),
+    axis.text = element_text(size = 10),
+    strip.text = element_text(size = 4, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  ) +
+  scale_color_brewer(palette = "Set1")
+
+```
+
+
+```{r}
+ggplot(tidy_stargazer_bin %>% filter(term != "(Intercept)"), 
+       aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high)) +
+  geom_pointrange(size = 1.2, color = "darkblue") +
+  geom_point(size = 4, shape = 21, fill = "blue") +
+  coord_flip() +
+  labs(title = "Regression Coefficients for Team Size Bins (Stargazer Count Normalized)",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    panel.grid.major = element_line(color = "gray", size = 0.5),
+    panel.grid.minor = element_line(color = "lightgray", size = 0.25),
+    panel.background = element_rect(fill = "white", color = "black")
+  )
+
+
+```
+
+```{r}
+ggplot(tidy_fork_bin %>% filter(term != "(Intercept)"), 
+       aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high)) +
+  geom_pointrange(size = 1.2, color = "darkgreen") +
+  geom_point(size = 4, shape = 21, fill = "green") +
+  coord_flip() +
+  labs(title = "Regression Coefficients for Team Size Bins (Fork Count Normalized)",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    panel.grid.major = element_line(color = "gray", size = 0.5),
+    panel.grid.minor = element_line(color = "lightgray", size = 0.25),
+    panel.background = element_rect(fill = "white", color = "black")
+  )
+
+```
+
+
+```{r}
+ggplot(tidy_revdep_bin %>% filter(term != "(Intercept)"), 
+       aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high)) +
+  geom_pointrange(size = 1.2, color = "darkred") +
+  geom_point(size = 4, shape = 21, fill = "red") +
+  coord_flip() +
+  labs(title = "Regression Coefficients for Team Size Bins (Log Downloads Normalized)",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    panel.grid.major = element_line(color = "gray", size = 0.5),
+    panel.grid.minor = element_line(color = "lightgray", size = 0.25),
+    panel.background = element_rect(fill = "white", color = "black")
+  )
+
+```
+
+```{r}
+library(multcomp)
+
+# Perform Tukey's HSD test
+tukey_test <- glht(model_stargazer_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_fork_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_revdep_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+#### non-normalized
+
+```{r}
+python_final_filtered2$team_size_bin <- as.factor(python_final_filtered2$team_size_bin)
+
+# Perform regression analysis using team_size_bin
+model_stargazer_bin <- lm(stargazerCount ~ team_size_bin, data = python_final_filtered2)
+model_fork_bin <- lm(forkCount ~ team_size_bin, data = python_final_filtered2)
+model_revdep_bin <- lm(Reverse_Depends_Count ~ team_size_bin, data = python_final_filtered2)
+
+# Tidy the models
+tidy_stargazer_bin <- tidy(model_stargazer_bin, conf.int = TRUE)
+tidy_fork_bin <- tidy(model_fork_bin, conf.int = TRUE)
+tidy_revdep_bin <- tidy(model_revdep_bin, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined_bin <- bind_rows(
+  tidy_stargazer_bin %>% mutate(model = "Stargazer Count"),
+  tidy_fork_bin %>% mutate(model = "Fork Count"),
+  tidy_revdep_bin %>% mutate(model = "Rev Dep Count")
+)
+
+# Filter out the intercept terms
+tidy_combined_bin <- tidy_combined_bin %>% filter(term != "(Intercept)")
+
+# Create the plot
+ggplot(tidy_combined_bin, aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  coord_flip() +
+  facet_wrap(~ model, scales = "free_y") +
+  labs(title = "Regression Coefficients for Team Size Bins",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 10, face = "bold"),
+    axis.title.y = element_text(size = 10, face = "bold"),
+    axis.text = element_text(size = 10),
+    strip.text = element_text(size = 6, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  ) +
+  scale_color_brewer(palette = "Set1")
+
+```
+
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_stargazer_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_fork_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_revdep_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+### models (team_size_bin w/o outliers)
+
+
+#### normalized
+
+```{r}
+python_final_filtered3$team_size_bin <- as.factor(python_final_filtered3$team_size_bin)
+
+# Perform regression analysis using team_size_bin
+model_stargazer_bin <- lm(stargazerCount_normalized ~ team_size_bin, data = python_final_filtered3)
+model_fork_bin <- lm(forkCount_normalized ~ team_size_bin, data = python_final_filtered3)
+model_revdep_bin <- lm(RevDepCount_normalized ~ team_size_bin, data = python_final_filtered3)
+
+# Tidy the models
+tidy_stargazer_bin <- tidy(model_stargazer_bin, conf.int = TRUE)
+tidy_fork_bin <- tidy(model_fork_bin, conf.int = TRUE)
+tidy_revdep_bin <- tidy(model_revdep_bin, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined_bin <- bind_rows(
+  tidy_stargazer_bin %>% mutate(model = "Stargazer Count Normalized"),
+  tidy_fork_bin %>% mutate(model = "Fork Count Normalized"),
+  tidy_revdep_bin %>% mutate(model = "Rev Dep Normalized")
+)
+
+# Filter out the intercept terms
+tidy_combined_bin <- tidy_combined_bin %>% filter(term != "(Intercept)")
+
+# Create the plot
+ggplot(tidy_combined_bin, aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  coord_flip() +
+  facet_wrap(~ model, scales = "free_y") +
+  labs(title = "Regression Coefficients for Team Size Bins",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 10, face = "bold"),
+    axis.title.y = element_text(size = 10, face = "bold"),
+    axis.text = element_text(size = 10),
+    strip.text = element_text(size = 5, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  ) +
+  scale_color_brewer(palette = "Set1")
+
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_stargazer_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_fork_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_revdep_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+#### non-normalized
+
+```{r}
+python_final_filtered4$team_size_bin <- as.factor(python_final_filtered4$team_size_bin)
+
+# Perform regression analysis using team_size_bin
+model_stargazer_bin <- lm(stargazerCount ~ team_size_bin, data = python_final_filtered4)
+model_fork_bin <- lm(forkCount ~ team_size_bin, data = python_final_filtered4)
+model_revdep_bin <- lm(Reverse_Depends_Count ~ team_size_bin, data = python_final_filtered4)
+
+# Tidy the models
+tidy_stargazer_bin <- tidy(model_stargazer_bin, conf.int = TRUE)
+tidy_fork_bin <- tidy(model_fork_bin, conf.int = TRUE)
+tidy_revdep_bin <- tidy(model_revdep_bin, conf.int = TRUE)
+
+# Combine the tidied data
+tidy_combined_bin <- bind_rows(
+  tidy_stargazer_bin %>% mutate(model = "Stargazer Count"),
+  tidy_fork_bin %>% mutate(model = "Fork Count"),
+  tidy_revdep_bin %>% mutate(model = "Rev Dep Count")
+)
+
+# Filter out the intercept terms
+tidy_combined_bin <- tidy_combined_bin %>% filter(term != "(Intercept)")
+
+# Create the plot
+ggplot(tidy_combined_bin, aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high, color = model)) +
+  geom_pointrange(size = 1.2) +
+  geom_point(size = 3) +
+  coord_flip() +
+  facet_wrap(~ model, scales = "free_y") +
+  labs(title = "Regression Coefficients for Team Size Bins",
+       x = "Team Size Bin",
+       y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 10, face = "bold"),
+    axis.title.y = element_text(size = 10, face = "bold"),
+    axis.text = element_text(size = 10),
+    strip.text = element_text(size = 8, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  ) +
+  scale_color_brewer(palette = "Set1")
+
+```
+
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_stargazer_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_fork_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
+```{r}
+# Perform Tukey's HSD test
+tukey_test <- glht(model_revdep_bin, linfct = mcp(team_size_bin = "Tukey"))
+
+# Summary of the Tukey test results
+summary(tukey_test)
+```
+
