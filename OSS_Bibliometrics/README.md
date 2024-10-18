@@ -32,7 +32,7 @@ Collection and Analysis tabs below, along with input files needed to run each on
 To run all the scripts of this analysis you will need the following
 software installed:
 
-- >= R-4.3.0
+- R-4.3.0
 
 - RStudio 2023.12.0+369
 
