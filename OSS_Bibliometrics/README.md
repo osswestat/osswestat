@@ -42,7 +42,7 @@ software installed:
 
 ### **Data Collection**
 
-Data collection of R/Python GitHub users and repositories was done through the use of the GitHub API after identifying a registry of GitHub URLs for both package managers
+Data collection of R/Python GitHub users and repositories was done through the use of the GitHub API after identifying a registry of GitHub URLs for both package managers.
 
 ### **Data Cleaning**
 
@@ -50,7 +50,7 @@ There was initial data cleaning done for each programming language to get the da
 
 |     | Script                         | Purpose                                                                                                                                                     | Input                      | Output             |
 |-----|--------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------|--------------------|
-| 1\. | PyPi_Cleaning.qmd | Clean and join Python database tables to create a final full dataset for analysis. Includes extracting country and sector data, and joining wih commits data | `Tables "python_dependencies", "python_repos", "python_github", and "python_commits" from Database` | `"python_final - A cleaned final version of all python data`|
+| 1\. | PyPi_Cleaning.qmd | Clean and join Python database tables to create a final full dataset for analysis. Includes extracting country and sector data, and joining wih commits data | `Tables "python_dependencies", "python_repos", "python_github", and "python_commits" from Database` | `"python_final" - A cleaned final version of all python data`|
 | 2\. | CRAN_Cleaning.qmd | Fetching most recent CRAN Database available publicly (September 2023 for our analysis), and extracting sector data for an EDA on full CRAN Database | `CRAN Database` | `"cran" - a cleaned version of the full Database uploaded to our Database from Sep. 2023` |
 
 
